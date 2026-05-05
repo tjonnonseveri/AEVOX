@@ -534,16 +534,19 @@ const V = (window.V = {
         </div>
       </div>`;
 
+		// Pas de filtre where() pour éviter les index Firestore
+		// On récupère tout et on filtre côté client
 		const q = query(
 			collection(db, "posts"),
-			where("type", "==", "public"),
 			orderBy("createdAt", "desc"),
-			limit(50),
+			limit(100),
 		);
 		const unsub = onSnapshot(q, async (snap) => {
 			const feed = $("feed-container");
 			if (!feed) return;
-			const posts = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+			const posts = snap.docs
+				.map((d) => ({ id: d.id, ...d.data() }))
+				.filter((p) => p.type === "public");
 			if (!posts.length) {
 				feed.innerHTML =
 					'<div class="empty-state"><p>Aucune publication publique.</p></div>';
@@ -788,13 +791,15 @@ const V = (window.V = {
 
 		const q = query(
 			collection(db, "conversations"),
-			where("members", "array-contains", currentUser.id),
 			orderBy("lastAt", "desc"),
+			limit(100),
 		);
 		const unsub = onSnapshot(q, async (snap) => {
 			const list = $("conv-list");
 			if (!list) return;
-			const convs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+			const convs = snap.docs
+				.map((d) => ({ id: d.id, ...d.data() }))
+				.filter((c) => (c.members || []).includes(currentUser.id));
 			if (!convs.length) {
 				list.innerHTML =
 					'<div class="empty-state"><p>Aucune conversation.</p></div>';
@@ -1449,17 +1454,21 @@ const V = (window.V = {
 					.join("") ||
 				'<div class="empty-state"><p>Aucun utilisateur trouvé.</p></div>';
 		} else {
+			// Pas de filtre where() pour éviter les index Firestore
 			const snap = await getDocs(
 				query(
 					collection(db, "posts"),
-					where("type", "==", "public"),
 					orderBy("createdAt", "desc"),
-					limit(30),
+					limit(100),
 				),
 			);
 			const posts = snap.docs
 				.map((d) => ({ id: d.id, ...d.data() }))
-				.filter((p) => p.content?.toLowerCase().includes(q.toLowerCase()));
+				.filter(
+					(p) =>
+						p.type === "public" &&
+						p.content?.toLowerCase().includes(q.toLowerCase()),
+				);
 			results.innerHTML = "";
 			for (const p of posts) {
 				const div = document.createElement("div");
@@ -1519,12 +1528,13 @@ const V = (window.V = {
 		const snap = await getDocs(
 			query(
 				collection(db, "notifications"),
-				where("toUid", "==", currentUser.id),
 				orderBy("createdAt", "desc"),
-				limit(30),
+				limit(50),
 			),
 		);
-		const notifs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+		const notifs = snap.docs
+			.map((d) => ({ id: d.id, ...d.data() }))
+			.filter((n) => n.toUid === currentUser.id);
 
 		const icons = {
 			like: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>`,
@@ -1589,16 +1599,11 @@ const V = (window.V = {
 		const isFollowing = !isMe && (currentUser.following || []).includes(uid);
 
 		const postsSnap = await getDocs(
-			query(
-				collection(db, "posts"),
-				where("authorId", "==", uid),
-				orderBy("createdAt", "desc"),
-				limit(20),
-			),
+			query(collection(db, "posts"), orderBy("createdAt", "desc"), limit(50)),
 		);
 		const posts = postsSnap.docs
 			.map((d) => ({ id: d.id, ...d.data() }))
-			.filter((p) => p.type === "public" || isMe);
+			.filter((p) => p.authorId === uid && (p.type === "public" || isMe));
 
 		el.innerHTML = `
       <div class="main-inner">
