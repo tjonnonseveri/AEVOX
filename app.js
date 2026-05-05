@@ -587,11 +587,48 @@ const V = (window.V = {
         <div class="page-header">
           <div class="page-title">Accueil</div>
         </div>
+        <div id="announcements-banner"></div>
         ${this.composeHTML()}
         <div id="feed-container">
           <div class="loading-screen" style="height:200px"><div class="spinner"></div></div>
         </div>
       </div>`;
+
+		// Charger les annonces
+		getDocs(
+			query(
+				collection(db, "announcements"),
+				orderBy("createdAt", "desc"),
+				limit(3),
+			),
+		)
+			.then((snap) => {
+				const banner = $("announcements-banner");
+				if (!banner || snap.empty) return;
+				const colors = {
+					info: "#4a9eff",
+					success: "#5dd89e",
+					warn: "#f5a623",
+					danger: "#f26b6b",
+				};
+				const icons = { info: "ℹ️", success: "✅", warn: "⚠️", danger: "🚫" };
+				banner.innerHTML = snap.docs
+					.map((d) => {
+						const a = d.data();
+						const c = colors[a.type] || "#4a9eff";
+						return `
+          <div style="background:${c}11;border:1px solid ${c}44;border-radius:var(--radius-sm);padding:12px 16px;margin-top:12px;display:flex;gap:10px;align-items:flex-start">
+            <div style="font-size:18px">${icons[a.type] || "📢"}</div>
+            <div style="flex:1">
+              <div style="font-weight:600;font-size:14px;color:${c}">${esc(a.title)}</div>
+              <div style="font-size:13px;color:var(--text2);margin-top:4px">${esc(a.body)}</div>
+              <div style="font-size:11px;color:var(--text3);margin-top:4px">Par l'équipe AEVOX &bull; ${timeAgo(a.createdAt)}</div>
+            </div>
+          </div>`;
+					})
+					.join("");
+			})
+			.catch(() => {});
 
 		const q = query(
 			collection(db, "posts"),
@@ -1909,129 +1946,704 @@ const V = (window.V = {
 			this.go("home");
 			return;
 		}
-
 		el.innerHTML = `
-      <div style="max-width:800px;margin:0 auto;padding:0 16px">
+      <div style="max-width:900px;margin:0 auto;padding:0 16px 60px">
         <div class="page-header">
-          <div class="page-title">Administration</div>
-          <div class="page-subtitle">Gestion de Aevox</div>
+          <div class="page-title">&#128737;&#65039; Administration</div>
+          <div class="page-subtitle">Panneau de gestion AEVOX</div>
         </div>
-        <div class="loading-screen" style="height:200px"><div class="spinner"></div></div>
+
+        <!-- Onglets admin -->
+        <div class="tab-bar" style="margin:16px 0 0">
+          <div class="tab active" id="atab-overview"  onclick="V.adminTab('overview')">&#128200; Vue</div>
+          <div class="tab"        id="atab-users"     onclick="V.adminTab('users')">&#128101; Membres</div>
+          <div class="tab"        id="atab-posts"     onclick="V.adminTab('posts')">&#128196; Posts</div>
+          <div class="tab"        id="atab-groups"    onclick="V.adminTab('groups')">&#128101; Groupes</div>
+          <div class="tab"        id="atab-roles"     onclick="V.adminTab('roles')">&#127894;&#65039; R\u00f4les</div>
+          <div class="tab"        id="atab-announce"  onclick="V.adminTab('announce')">&#128226; Annonces</div>
+        </div>
+
+        <div id="admin-tab-content" style="margin-top:16px">
+          <div class="loading-screen" style="height:200px"><div class="spinner"></div></div>
+        </div>
       </div>`;
 
-		const [usersSnap, postsSnap] = await Promise.all([
+		this.adminTab("overview");
+	},
+
+	async adminTab(tab) {
+		// Mettre à jour les onglets
+		document
+			.querySelectorAll('[id^="atab-"]')
+			.forEach((t) => t.classList.remove("active"));
+		const activeTab = $("atab-" + tab);
+		if (activeTab) activeTab.classList.add("active");
+		const content = $("admin-tab-content");
+		if (!content) return;
+		content.innerHTML =
+			'<div class="loading-screen" style="height:200px"><div class="spinner"></div></div>';
+
+		switch (tab) {
+			case "overview":
+				await this.adminOverview(content);
+				break;
+			case "users":
+				await this.adminUsers(content);
+				break;
+			case "posts":
+				await this.adminPosts(content);
+				break;
+			case "groups":
+				await this.adminGroups(content);
+				break;
+			case "roles":
+				await this.adminRoles(content);
+				break;
+			case "announce":
+				await this.adminAnnounce(content);
+				break;
+		}
+	},
+
+	// ---- VUE D'ENSEMBLE ----
+	async adminOverview(el) {
+		const [usersSnap, postsSnap, groupsSnap, announceSnap] = await Promise.all([
 			getDocs(collection(db, "users")),
 			getDocs(collection(db, "posts")),
+			getDocs(collection(db, "groups")),
+			getDocs(collection(db, "announcements")),
 		]);
-		const users = usersSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+		const users = usersSnap.docs.map((d) => d.data());
 		const posts = postsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
-		const rows = users
-			.map(
-				(u) => `
-      <tr style="${u.banned ? "opacity:0.6" : ""}">
+		el.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px">
+        ${[
+					{ val: users.length, lbl: "Utilisateurs", color: "#7c6af7" },
+					{
+						val: users.filter((u) => !u.banned).length,
+						lbl: "Actifs",
+						color: "#5dd89e",
+					},
+					{
+						val: users.filter((u) => u.banned).length,
+						lbl: "Bannis",
+						color: "#f26b6b",
+					},
+					{
+						val: users.filter((u) => u.role === "admin").length,
+						lbl: "Admins",
+						color: "#f5a623",
+					},
+					{ val: posts.length, lbl: "Publications", color: "#4a9eff" },
+					{ val: groupsSnap.size, lbl: "Groupes", color: "#d46ef5" },
+					{ val: announceSnap.size, lbl: "Annonces", color: "#4ecb7a" },
+				]
+					.map(
+						(s) => `
+          <div class="admin-stat">
+            <div class="admin-stat-val" style="color:${s.color}">${s.val}</div>
+            <div class="admin-stat-lbl">${s.lbl}</div>
+          </div>`,
+					)
+					.join("")}
+      </div>
+
+      <!-- Dernières inscriptions -->
+      <div class="settings-section">
+        <h3>&#128197; Dernières inscriptions</h3>
+        ${users
+					.slice(-5)
+					.reverse()
+					.map(
+						(u) => `
+          <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
+            ${avatarHTML(u)}
+            <div style="flex:1">
+              <div style="font-size:14px;font-weight:500">${esc(u.name)}</div>
+              <div style="font-size:12px;color:var(--text3)">@${esc(u.handle || "")} &bull; ${esc(u.email || "")}</div>
+            </div>
+            <span class="badge badge-${u.role === "admin" ? "admin" : u.banned ? "banned" : "user"}">
+              ${u.role === "admin" ? "Admin" : u.banned ? "Banni" : "Membre"}
+            </span>
+          </div>`,
+					)
+					.join("")}
+      </div>
+
+      <!-- Derniers posts -->
+      <div class="settings-section">
+        <h3>&#128196; Dernières publications</h3>
+        <div id="admin-recent-posts"><div class="spinner"></div></div>
+      </div>`;
+
+		try {
+			const htmlParts = await Promise.all(
+				posts.slice(0, 5).map((p) => this.postHTML(p)),
+			);
+			const c = $("admin-recent-posts");
+			if (c)
+				c.innerHTML =
+					htmlParts.filter(Boolean).join("") ||
+					'<p style="color:var(--text3)">Aucune publication.</p>';
+		} catch {}
+	},
+
+	// ---- GESTION DES MEMBRES ----
+	async adminUsers(el) {
+		const snap = await getDocs(collection(db, "users"));
+		const users = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+		el.innerHTML = `
+      <div class="settings-section" style="overflow-x:auto">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+          <h3>&#128101; Gestion des membres (${users.length})</h3>
+          <input type="text" class="form-input" placeholder="&#128269; Rechercher..."
+            style="width:200px;padding:8px 12px"
+            oninput="V.filterAdminUsers(this.value)"/>
+        </div>
+        <table class="admin-table" id="admin-users-table">
+          <thead>
+            <tr>
+              <th>Utilisateur</th>
+              <th>R\u00f4le</th>
+              <th>Email</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="admin-users-body">
+            ${users.map((u) => this.adminUserRow(u)).join("")}
+          </tbody>
+        </table>
+      </div>`;
+
+		// Stocker pour la recherche
+		window._adminUsers = users;
+	},
+
+	adminUserRow(u) {
+		const roleColor = u.banned
+			? "#f26b6b"
+			: u.role === "admin"
+				? "#7c6af7"
+				: u.customRole
+					? "#f5a623"
+					: "#888";
+		const roleLabel = u.banned
+			? "&#128683; Banni"
+			: u.role === "admin"
+				? "&#128737; Admin"
+				: u.customRole
+					? esc(u.customRole)
+					: "Membre";
+		return `
+      <tr id="urow-${u.id}" style="${u.banned ? "opacity:0.55" : ""}">
         <td>
           <div style="display:flex;align-items:center;gap:8px">
             ${avatarHTML(u)}
             <div>
               <div style="font-weight:500;font-size:13px">${esc(u.name)}</div>
               <div style="font-size:12px;color:var(--text3)">@${esc(u.handle || "")}</div>
-              ${u.banned && u.banReason ? `<div style="font-size:11px;color:#f26b6b;margin-top:2px">Banni : ${esc(u.banReason)}</div>` : ""}
+              ${u.banReason ? `<div style="font-size:11px;color:#f26b6b">Raison : ${esc(u.banReason)}</div>` : ""}
             </div>
           </div>
         </td>
         <td>
-          <span class="badge badge-${u.banned ? "banned" : u.role === "admin" ? "admin" : "user"}">
-            ${u.banned ? "&#128683; Banni" : u.role === "admin" ? "Admin" : "Utilisateur"}
-          </span>
+          <span class="badge" style="background:${roleColor}22;color:${roleColor}">${roleLabel}</span>
         </td>
-        <td style="font-size:13px;color:var(--text3)">${esc(u.email || "")}</td>
+        <td style="font-size:12px;color:var(--text3)">${esc(u.email || "")}</td>
         <td>
           ${
 						u.id !== currentUser.id
-							? `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-                <button class="toggle ${u.role === "admin" ? "on" : ""}"
-                  onclick="V.toggleAdminRole('${u.id}','${u.role}')"
-                  title="${u.role === "admin" ? "Retirer admin" : "Donner admin"}"></button>
-                <button
-                  onclick="V.showBanModal('${u.id}','${esc(u.name)}',${!!u.banned})"
-                  style="padding:4px 10px;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;border:1px solid ${u.banned ? "rgba(93,216,158,0.3)" : "rgba(242,107,107,0.3)"};background:${u.banned ? "rgba(93,216,158,0.1)" : "rgba(242,107,107,0.1)"};color:${u.banned ? "#5dd89e" : "#f26b6b"}">
-                  ${u.banned ? "D\u00e9bannir" : "Bannir"}
-                </button>
-               </div>`
+							? `
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <button class="btn-secondary" style="font-size:11px;padding:4px 8px"
+                onclick="V.showRoleModal('${u.id}','${esc(u.name)}','${esc(u.role || "")}','${esc(u.customRole || "")}')">
+                R\u00f4le
+              </button>
+              <button class="btn-secondary" style="font-size:11px;padding:4px 8px"
+                onclick="V.go('profile','${u.id}')">
+                Profil
+              </button>
+              <button onclick="V.showBanModal('${u.id}','${esc(u.name)}',${!!u.banned})"
+                style="font-size:11px;padding:4px 8px;border-radius:6px;cursor:pointer;border:1px solid ${u.banned ? "rgba(93,216,158,0.3)" : "rgba(242,107,107,0.3)"};background:${u.banned ? "rgba(93,216,158,0.08)" : "rgba(242,107,107,0.08)"};color:${u.banned ? "#5dd89e" : "#f26b6b"}">
+                ${u.banned ? "D\u00e9bannir" : "Bannir"}
+              </button>
+            </div>`
 							: '<span style="font-size:12px;color:var(--text3)">Vous</span>'
 					}
         </td>
-      </tr>`,
-			)
-			.join("");
+      </tr>`;
+	},
 
+	filterAdminUsers(q) {
+		const users = (window._adminUsers || []).filter(
+			(u) =>
+				!q ||
+				u.name?.toLowerCase().includes(q.toLowerCase()) ||
+				u.handle?.toLowerCase().includes(q.toLowerCase()) ||
+				u.email?.toLowerCase().includes(q.toLowerCase()),
+		);
+		const body = $("admin-users-body");
+		if (body) body.innerHTML = users.map((u) => this.adminUserRow(u)).join("");
+	},
+
+	// ---- GESTION DES POSTS ----
+	async adminPosts(el) {
 		el.innerHTML = `
-      <div style="max-width:800px;margin:0 auto;padding:0 16px 40px">
-        <div class="page-header">
-          <div class="page-title">Administration</div>
-          <div class="page-subtitle">Gestion de Aevox</div>
-        </div>
-        <div class="admin-stat-grid" style="margin-top:16px">
-          <div class="admin-stat">
-            <div class="admin-stat-val">${users.length}</div>
-            <div class="admin-stat-lbl">Utilisateurs</div>
-          </div>
-          <div class="admin-stat">
-            <div class="admin-stat-val">${posts.length}</div>
-            <div class="admin-stat-lbl">Publications</div>
-          </div>
-          <div class="admin-stat">
-            <div class="admin-stat-val">${users.filter((u) => u.role === "admin").length}</div>
-            <div class="admin-stat-lbl">Admins</div>
+      <div class="settings-section">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+          <h3>&#128196; Toutes les publications</h3>
+          <div style="display:flex;gap:8px">
+            <select class="compose-select" onchange="V.filterAdminPosts(this.value)" id="admin-posts-filter">
+              <option value="all">Tous</option>
+              <option value="public">Public</option>
+              <option value="followers">Abonn\u00e9s</option>
+            </select>
           </div>
         </div>
-        <div class="settings-section" style="overflow-x:auto">
-          <h3>Gestion des utilisateurs</h3>
-          <table class="admin-table">
-            <thead>
-              <tr>
-                <th>Utilisateur</th>
-                <th>Rôle</th>
-                <th>Email</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>${rows}</tbody>
-          </table>
-        </div>
-        <div class="settings-section">
-          <h3>Publications récentes</h3>
-          <div id="admin-posts">
-            <div class="loading-screen" style="height:100px"><div class="spinner"></div></div>
-          </div>
+        <div id="admin-all-posts">
+          <div class="loading-screen" style="height:150px"><div class="spinner"></div></div>
         </div>
       </div>`;
 
-		const postsContainer = $("admin-posts");
-		if (!postsContainer) return;
-		if (!posts.length) {
-			postsContainer.innerHTML =
-				'<div class="empty-state"><p>Aucune publication.</p></div>';
-			return;
-		}
-		try {
-			const htmlParts = await Promise.all(
-				posts.slice(0, 10).map((p) => this.postHTML(p)),
-			);
-			postsContainer.innerHTML =
-				htmlParts.filter(Boolean).join("") ||
-				'<div class="empty-state"><p>Aucune publication.</p></div>';
-		} catch (e) {
-			postsContainer.innerHTML =
-				'<div class="empty-state"><p>Erreur lors du chargement des publications.</p></div>';
-		}
+		await this.filterAdminPosts("all");
 	},
 
-	async toggleAdminRole(uid, currentRole) {
-		const newRole = currentRole === "admin" ? "user" : "admin";
-		await updateDoc(doc(db, "users", uid), { role: newRole });
-		this.go("admin");
+	async filterAdminPosts(filter) {
+		const snap = await getDocs(
+			query(collection(db, "posts"), orderBy("createdAt", "desc"), limit(100)),
+		);
+		let posts = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+		if (filter !== "all") posts = posts.filter((p) => p.type === filter);
+		const c = $("admin-all-posts");
+		if (!c) return;
+		if (!posts.length) {
+			c.innerHTML = '<div class="empty-state"><p>Aucune publication.</p></div>';
+			return;
+		}
+		const htmlParts = await Promise.all(posts.map((p) => this.postHTML(p)));
+		c.innerHTML = htmlParts.filter(Boolean).join("");
+	},
+
+	// ---- GESTION DES GROUPES ----
+	async adminGroups(el) {
+		const snap = await getDocs(collection(db, "groups"));
+		const groups = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+		el.innerHTML = `
+      <div class="settings-section">
+        <h3>&#128101; Tous les groupes (${groups.length})</h3>
+        ${
+					!groups.length
+						? '<div class="empty-state"><p>Aucun groupe.</p></div>'
+						: groups
+								.map(
+									(g) => `
+            <div style="background:var(--bg3);border-radius:var(--radius-sm);padding:14px;margin-bottom:10px">
+              <div style="display:flex;align-items:center;gap:12px">
+                <div class="group-icon" style="flex-shrink:0">${g.emoji || "&#128172;"}</div>
+                <div style="flex:1">
+                  <div style="font-weight:500;font-size:15px">${esc(g.name)}</div>
+                  <div style="font-size:12px;color:var(--text3);margin-top:2px">
+                    ${(g.members || []).length} membre(s) &bull; Cr\u00e9\u00e9 par ${esc(g.createdBy || "?")}
+                  </div>
+                </div>
+                <div style="display:flex;gap:6px">
+                  <button class="btn-secondary" style="font-size:12px;padding:6px 10px"
+                    onclick="V.adminGroupMembers('${g.id}','${esc(g.name)}',${JSON.stringify(g.members || []).replace(/"/g, "'")})">
+                    Membres
+                  </button>
+                  <button onclick="V.adminDeleteGroup('${g.id}','${esc(g.name)}')"
+                    style="font-size:12px;padding:6px 10px;border-radius:6px;cursor:pointer;border:1px solid rgba(242,107,107,0.3);background:rgba(242,107,107,0.08);color:#f26b6b">
+                    Supprimer
+                  </button>
+                </div>
+              </div>
+            </div>`,
+								)
+								.join("")
+				}
+      </div>`;
+	},
+
+	async adminGroupMembers(groupId, groupName, members) {
+		// Récupérer les noms des membres
+		const usersSnap = await getDocs(collection(db, "users"));
+		const allUsers = usersSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+		const memberUsers = allUsers.filter((u) => members.includes(u.id));
+		const nonMembers = allUsers.filter(
+			(u) => !members.includes(u.id) && !u.banned,
+		);
+
+		this.showModal(`
+      <div class="modal-title">Membres de "${esc(groupName)}"</div>
+      <div style="margin-bottom:16px">
+        <div style="font-size:13px;color:var(--text3);margin-bottom:8px;font-weight:500">Membres actuels</div>
+        ${
+					memberUsers
+						.map(
+							(u) => `
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
+            ${avatarHTML(u)}
+            <div style="flex:1">
+              <div style="font-size:13px;font-weight:500">${esc(u.name)}</div>
+              <div style="font-size:12px;color:var(--text3)">@${esc(u.handle || "")}</div>
+            </div>
+            <button onclick="V.adminRemoveFromGroup('${groupId}','${u.id}','${esc(groupName)}')"
+              style="font-size:11px;padding:4px 8px;border-radius:6px;cursor:pointer;border:1px solid rgba(242,107,107,0.3);background:rgba(242,107,107,0.08);color:#f26b6b">
+              Retirer
+            </button>
+          </div>`,
+						)
+						.join("") ||
+					'<p style="color:var(--text3);font-size:13px">Aucun membre.</p>'
+				}
+      </div>
+      ${
+				nonMembers.length
+					? `
+        <div>
+          <div style="font-size:13px;color:var(--text3);margin-bottom:8px;font-weight:500">Ajouter un membre</div>
+          ${nonMembers
+						.map(
+							(u) => `
+            <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
+              ${avatarHTML(u)}
+              <div style="flex:1">
+                <div style="font-size:13px;font-weight:500">${esc(u.name)}</div>
+              </div>
+              <button class="btn-secondary" style="font-size:11px;padding:4px 8px"
+                onclick="V.adminAddToGroup('${groupId}','${u.id}','${esc(groupName)}')">
+                Ajouter
+              </button>
+            </div>`,
+						)
+						.join("")}
+        </div>`
+					: ""
+			}
+      <div class="btn-row" style="margin-top:16px">
+        <button class="btn-secondary" onclick="V.closeModal()">Fermer</button>
+      </div>`);
+	},
+
+	async adminRemoveFromGroup(groupId, userId, groupName) {
+		await updateDoc(doc(db, "groups", groupId), {
+			members: arrayRemove(userId),
+		});
+		this.closeModal();
+		this.adminTab("groups");
+	},
+
+	async adminAddToGroup(groupId, userId, groupName) {
+		await updateDoc(doc(db, "groups", groupId), {
+			members: arrayUnion(userId),
+		});
+		this.closeModal();
+		this.adminTab("groups");
+	},
+
+	async adminDeleteGroup(groupId, groupName) {
+		this.showModal(`
+      <div class="modal-title">Supprimer ce groupe ?</div>
+      <p style="font-size:14px;color:var(--text2);margin-bottom:20px">
+        Le groupe <strong>${esc(groupName)}</strong> sera supprim\u00e9 d\u00e9finitivement ainsi que tous ses messages.
+      </p>
+      <div class="btn-row">
+        <button class="btn-secondary" onclick="V.closeModal()">Annuler</button>
+        <button class="btn-danger" onclick="V.confirmDeleteGroup('${groupId}')">Supprimer</button>
+      </div>`);
+	},
+
+	async confirmDeleteGroup(groupId) {
+		await deleteDoc(doc(db, "groups", groupId));
+		this.closeModal();
+		this.adminTab("groups");
+	},
+
+	// ---- GESTION DES RÔLES ----
+	async adminRoles(el) {
+		const snap = await getDocs(collection(db, "custom_roles"));
+		const customRoles = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+		el.innerHTML = `
+      <div class="settings-section">
+        <h3>&#127894;&#65039; R\u00f4les syst\u00e8me</h3>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px">
+          ${[
+						{
+							name: "admin",
+							label: "&#128737; Admin",
+							color: "#7c6af7",
+							desc: "Acc\u00e8s complet au panneau admin",
+						},
+						{
+							name: "certified",
+							label: "&#9989; Certifi\u00e9",
+							color: "#4a9eff",
+							desc: "Compte v\u00e9rifi\u00e9 et certifi\u00e9",
+						},
+						{
+							name: "user",
+							label: "&#128100; Membre",
+							color: "#888",
+							desc: "Membre standard",
+						},
+					]
+						.map(
+							(r) => `
+            <div style="display:flex;align-items:center;gap:12px;padding:12px;background:var(--bg3);border-radius:var(--radius-sm)">
+              <span class="badge" style="background:${r.color}22;color:${r.color};font-size:13px">${r.label}</span>
+              <div style="flex:1;font-size:13px;color:var(--text2)">${r.desc}</div>
+              <span style="font-size:11px;color:var(--text3)">Syst\u00e8me</span>
+            </div>`,
+						)
+						.join("")}
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+          <h3>&#10024; R\u00f4les personnalis\u00e9s (${customRoles.length})</h3>
+          <button class="btn-primary" style="font-size:13px;padding:8px 14px"
+            onclick="V.showCreateRoleModal()">+ Cr\u00e9er un r\u00f4le</button>
+        </div>
+        <div id="custom-roles-list">
+          ${
+						!customRoles.length
+							? '<div class="empty-state" style="padding:24px"><p>Aucun r\u00f4le personnalis\u00e9.</p></div>'
+							: customRoles
+									.map(
+										(r) => `
+              <div style="display:flex;align-items:center;gap:12px;padding:12px;background:var(--bg3);border-radius:var(--radius-sm);margin-bottom:8px">
+                <span class="badge" style="background:${esc(r.color || "#888")}22;color:${esc(r.color || "#888")};font-size:13px">${esc(r.icon || "")} ${esc(r.name)}</span>
+                <div style="flex:1;font-size:13px;color:var(--text2)">${esc(r.description || "")}</div>
+                <button onclick="V.deleteCustomRole('${r.id}','${esc(r.name)}')"
+                  style="font-size:11px;padding:4px 8px;border-radius:6px;cursor:pointer;border:1px solid rgba(242,107,107,0.3);background:rgba(242,107,107,0.08);color:#f26b6b">
+                  Supprimer
+                </button>
+              </div>`,
+									)
+									.join("")
+					}
+        </div>
+      </div>`;
+	},
+
+	showCreateRoleModal() {
+		this.showModal(`
+      <div class="modal-title">Cr\u00e9er un r\u00f4le personnalis\u00e9</div>
+      <div class="form-group">
+        <label class="form-label">Nom du r\u00f4le</label>
+        <input type="text" class="form-input" id="role-name" placeholder="Ex: Mod\u00e9rateur, VIP, Partenaire..."/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Ic\u00f4ne (emoji)</label>
+        <input type="text" class="form-input" id="role-icon" placeholder="Ex: &#11088;, &#127381;, &#128081;..."/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Couleur</label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
+          ${[
+						"#7c6af7",
+						"#4a9eff",
+						"#5dd89e",
+						"#f5a623",
+						"#f26b6b",
+						"#d46ef5",
+						"#4ecb7a",
+						"#ff6b9d",
+					]
+						.map(
+							(c) =>
+								`<button onclick="document.getElementById('role-color').value='${c}';document.querySelectorAll('.color-pick').forEach(b=>b.style.outline='none');this.style.outline='2px solid white'"
+              class="color-pick" style="width:28px;height:28px;border-radius:50%;background:${c};border:none;cursor:pointer"></button>`,
+						)
+						.join("")}
+          <input type="color" id="role-color" value="#7c6af7"
+            style="width:28px;height:28px;border-radius:50%;border:none;cursor:pointer;padding:0"/>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Description</label>
+        <input type="text" class="form-input" id="role-desc" placeholder="Description du r\u00f4le..."/>
+      </div>
+      <div class="btn-row">
+        <button class="btn-secondary" onclick="V.closeModal()">Annuler</button>
+        <button class="btn-primary" onclick="V.saveCustomRole()">Cr\u00e9er</button>
+      </div>`);
+	},
+
+	async saveCustomRole() {
+		const name = $("role-name")?.value?.trim();
+		const icon = $("role-icon")?.value?.trim();
+		const color = $("role-color")?.value;
+		const desc = $("role-desc")?.value?.trim();
+		if (!name) return;
+		await addDoc(collection(db, "custom_roles"), {
+			name,
+			icon,
+			color,
+			description: desc,
+			createdBy: currentUser.id,
+			createdAt: serverTimestamp(),
+		});
+		this.closeModal();
+		this.adminTab("roles");
+	},
+
+	async deleteCustomRole(roleId, roleName) {
+		if (!confirm(`Supprimer le r\u00f4le "${roleName}" ?`)) return;
+		await deleteDoc(doc(db, "custom_roles", roleId));
+		this.adminTab("roles");
+	},
+
+	// Modal pour assigner un rôle à un utilisateur
+	async showRoleModal(uid, name, currentRole, currentCustomRole) {
+		const snap = await getDocs(collection(db, "custom_roles"));
+		const customRoles = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+		this.showModal(`
+      <div class="modal-title">R\u00f4le de ${esc(name)}</div>
+      <div class="form-group">
+        <label class="form-label">R\u00f4le syst\u00e8me</label>
+        <select class="form-input" id="role-system">
+          <option value="user"  ${currentRole !== "admin" ? "selected" : ""}>&#128100; Membre</option>
+          <option value="admin" ${currentRole === "admin" ? "selected" : ""}>&#128737; Admin</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">R\u00f4le personnalis\u00e9</label>
+        <select class="form-input" id="role-custom">
+          <option value="">Aucun</option>
+          ${customRoles
+						.map(
+							(r) =>
+								`<option value="${esc(r.name)}" ${currentCustomRole === r.name ? "selected" : ""}>${esc(r.icon || "")} ${esc(r.name)}</option>`,
+						)
+						.join("")}
+        </select>
+      </div>
+      <div class="btn-row">
+        <button class="btn-secondary" onclick="V.closeModal()">Annuler</button>
+        <button class="btn-primary" onclick="V.applyRole('${uid}')">Appliquer</button>
+      </div>`);
+	},
+
+	async applyRole(uid) {
+		const systemRole = $("role-system")?.value;
+		const customRole = $("role-custom")?.value;
+		await updateDoc(doc(db, "users", uid), {
+			role: systemRole,
+			customRole: customRole || null,
+		});
+		this.closeModal();
+		this.adminTab("users");
+	},
+
+	// ---- ANNONCES ----
+	async adminAnnounce(el) {
+		const snap = await getDocs(
+			query(
+				collection(db, "announcements"),
+				orderBy("createdAt", "desc"),
+				limit(20),
+			),
+		);
+		const anns = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+		el.innerHTML = `
+      <div class="settings-section">
+        <h3>&#128226; Nouvelle annonce</h3>
+        <div class="form-group">
+          <label class="form-label">Titre</label>
+          <input type="text" class="form-input" id="ann-title" placeholder="Titre de l'annonce..."/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Message</label>
+          <textarea class="form-input form-textarea" id="ann-body" placeholder="Contenu de l'annonce..." style="min-height:100px"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Type</label>
+          <select class="form-input" id="ann-type">
+            <option value="info">&#8505;&#65039; Information</option>
+            <option value="success">&#9989; Bonne nouvelle</option>
+            <option value="warn">&#9888;&#65039; Avertissement</option>
+            <option value="danger">&#128683; Urgent</option>
+          </select>
+        </div>
+        <button class="btn-primary" onclick="V.publishAnnouncement()">&#128226; Publier l'annonce</button>
+        <div id="ann-msg" style="margin-top:10px"></div>
+      </div>
+
+      <div class="settings-section">
+        <h3>&#128195; Annonces publi\u00e9es (${anns.length})</h3>
+        ${
+					!anns.length
+						? '<div class="empty-state" style="padding:24px"><p>Aucune annonce.</p></div>'
+						: anns
+								.map((a) => {
+									const colors = {
+										info: "#4a9eff",
+										success: "#5dd89e",
+										warn: "#f5a623",
+										danger: "#f26b6b",
+									};
+									const icons = {
+										info: "ℹ️",
+										success: "✅",
+										warn: "⚠️",
+										danger: "🚫",
+									};
+									const c = colors[a.type] || "#888";
+									return `
+              <div style="background:${c}11;border:1px solid ${c}33;border-radius:var(--radius-sm);padding:14px;margin-bottom:10px">
+                <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
+                  <div style="flex:1">
+                    <div style="font-weight:600;font-size:14px;color:${c}">${icons[a.type] || ""} ${esc(a.title)}</div>
+                    <div style="font-size:13px;color:var(--text2);margin-top:6px">${esc(a.body)}</div>
+                    <div style="font-size:11px;color:var(--text3);margin-top:6px">${timeAgo(a.createdAt)}</div>
+                  </div>
+                  <button onclick="V.deleteAnnouncement('${a.id}')"
+                    style="font-size:11px;padding:4px 8px;border-radius:6px;cursor:pointer;border:1px solid rgba(242,107,107,0.3);background:rgba(242,107,107,0.08);color:#f26b6b;flex-shrink:0">
+                    Supprimer
+                  </button>
+                </div>
+              </div>`;
+								})
+								.join("")
+				}
+      </div>`;
+	},
+
+	async publishAnnouncement() {
+		const title = $("ann-title")?.value?.trim();
+		const body = $("ann-body")?.value?.trim();
+		const type = $("ann-type")?.value || "info";
+		if (!title || !body) {
+			$("ann-msg").innerHTML =
+				'<div class="alert alert-error">Titre et message requis.</div>';
+			return;
+		}
+		await addDoc(collection(db, "announcements"), {
+			title,
+			body,
+			type,
+			authorId: currentUser.id,
+			authorName: currentUser.name,
+			createdAt: serverTimestamp(),
+		});
+		$("ann-msg").innerHTML =
+			'<div class="alert alert-success">Annonce publi\u00e9e !</div>';
+		if ($("ann-title")) $("ann-title").value = "";
+		if ($("ann-body")) $("ann-body").value = "";
+		setTimeout(() => this.adminTab("announce"), 1500);
+	},
+
+	async deleteAnnouncement(id) {
+		await deleteDoc(doc(db, "announcements", id));
+		this.adminTab("announce");
 	},
 
 	// Bannissement avec confirmation et raison
