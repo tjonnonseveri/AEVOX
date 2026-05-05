@@ -825,8 +825,95 @@ const V = (window.V = {
 			return;
 		}
 		const { uid, cid } = data;
+		const isGroup = uid === "__group__" || !!data.groupId;
+		const groupId = data.groupId || (isGroup ? cid : null);
 
-		// Récupérer les infos de l'autre utilisateur
+		// ---- CAS GROUPE ----
+		if (isGroup && groupId) {
+			const groupSnap = await getDoc(doc(db, "groups", groupId));
+			if (!groupSnap.exists()) {
+				this.go("groups");
+				return;
+			}
+			const group = { id: groupId, ...groupSnap.data() };
+
+			el.innerHTML = `
+        <div class="chat-window">
+          <div class="chat-header">
+            <button class="btn-action" onclick="V.go('groups')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                <polyline points="15 18 9 12 15 6"/>
+              </svg>
+            </button>
+            <div style="width:36px;height:36px;border-radius:12px;background:var(--accent-bg2);display:flex;align-items:center;justify-content:center;font-size:20px">${group.emoji || "💬"}</div>
+            <div>
+              <div style="font-weight:500;font-size:15px">${esc(group.name)}</div>
+              <div style="font-size:12px;color:var(--text3)">${(group.members || []).length} membre(s)</div>
+            </div>
+            <button class="btn-secondary" style="margin-left:auto;font-size:12px;padding:6px 10px" onclick="V.manageGroup('${groupId}')">⚙️ Gérer</button>
+          </div>
+          <div class="chat-messages" id="chat-messages">
+            <div class="empty-state" style="padding:24px"><p>Début de la discussion du groupe</p></div>
+          </div>
+          <div class="typing-indicator" id="typing-indicator"></div>
+          <div class="chat-input-area">
+            <textarea class="chat-input" id="chat-input"
+              placeholder="Message dans ${esc(group.name)}..."
+              rows="1"
+              onkeydown="V.chatKeydown(event,'__group__','${groupId}')">
+            </textarea>
+            <button class="btn-send" onclick="V.sendGroupMessage('${groupId}')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="22" y1="2" x2="11" y2="13"/>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+              </svg>
+            </button>
+          </div>
+        </div>`;
+
+			// Écouter les messages du groupe (Realtime Database)
+			const msgsRef = ref(rtdb, `group_msgs/${groupId}`);
+			chatUnsub = () => off(msgsRef);
+			// Charger les messages existants
+			onChildAdded(msgsRef, async (snap) => {
+				const msg = snap.val();
+				const isMe = msg.sid === currentUser.id;
+				const container = $("chat-messages");
+				if (!container) return;
+				// Vider l'état vide si c'est le premier message
+				const emptyState = container.querySelector(".empty-state");
+				if (emptyState) emptyState.remove();
+				// Récupérer le nom de l'expéditeur
+				let senderName = "Utilisateur";
+				let senderColor = "#7c6af7";
+				if (msg.sid === currentUser.id) {
+					senderName = currentUser.name;
+					senderColor = currentUser.avatarColor;
+				} else {
+					try {
+						const uSnap = await getDoc(doc(db, "users", msg.sid));
+						if (uSnap.exists()) {
+							senderName = uSnap.data().name;
+							senderColor = uSnap.data().avatarColor;
+						}
+					} catch {}
+				}
+				const div = document.createElement("div");
+				div.innerHTML = `
+          <div class="chat-msg ${isMe ? "me" : ""}">
+            ${!isMe ? `<div class="avatar" style="background:${senderColor};width:28px;height:28px;font-size:11px;flex-shrink:0">${senderName[0]}</div>` : ""}
+            <div>
+              ${!isMe ? `<div style="font-size:11px;color:var(--text3);margin-bottom:3px">${esc(senderName)}</div>` : ""}
+              <div class="chat-bubble">${formatContent(msg.c)}</div>
+            </div>
+          </div>`;
+				container.appendChild(div.firstChild);
+				container.scrollTop = container.scrollHeight;
+			});
+			return;
+		}
+
+		// ---- CAS MESSAGE DIRECT ----
 		const userSnap = await getDoc(doc(db, "users", uid));
 		const other = userSnap.exists()
 			? { id: uid, ...userSnap.data() }
@@ -899,7 +986,7 @@ const V = (window.V = {
 			});
 		} catch {}
 
-		// Écouter les nouveaux messages en temps réel (Realtime Database)
+		// Écouter les messages (Realtime Database)
 		const msgsRef = ref(rtdb, `msgs/${convId}`);
 		chatUnsub = () => off(msgsRef);
 		onChildAdded(msgsRef, (snap) => {
@@ -916,7 +1003,7 @@ const V = (window.V = {
 			container.scrollTop = container.scrollHeight;
 		});
 
-		// Écouter l'indicateur "en train d'écrire"
+		// Indicateur "en train d'écrire"
 		const typingRef = ref(rtdb, `typing/${convId}/${uid}`);
 		onValue(typingRef, (snap) => {
 			const ti = $("typing-indicator");
@@ -925,7 +1012,7 @@ const V = (window.V = {
 					snap.val() === true ? `${other.name} est en train d'écrire...` : "";
 		});
 
-		// Écouter le statut en ligne en temps réel
+		// Statut en ligne
 		const presRef = ref(rtdb, `presence/${uid}`);
 		onValue(presRef, (snap) => {
 			const status = $("online-status");
@@ -938,10 +1025,26 @@ const V = (window.V = {
 		});
 	},
 
+	async sendGroupMessage(groupId) {
+		const input = $("chat-input");
+		const text = input?.value?.trim();
+		if (!text) return;
+		input.value = "";
+		await push(ref(rtdb, `group_msgs/${groupId}`), {
+			sid: currentUser.id,
+			c: text,
+			ts: Date.now(),
+		});
+	},
+
 	chatKeydown(e, uid, cid) {
 		if (e.key === "Enter" && !e.shiftKey) {
 			e.preventDefault();
-			this.sendMessage(uid, cid);
+			if (uid === "__group__") {
+				this.sendGroupMessage(cid);
+			} else {
+				this.sendMessage(uid, cid);
+			}
 		}
 	},
 
@@ -1080,7 +1183,7 @@ const V = (window.V = {
 	},
 
 	openGroup(groupId) {
-		this.go("chat", { uid: "__group__", cid: groupId });
+		this.go("chat", { uid: "__group__", cid: groupId, groupId: groupId });
 	},
 
 	async joinGroup(groupId) {
