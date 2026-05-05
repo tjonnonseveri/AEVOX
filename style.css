@@ -1631,3 +1631,33 @@ body {
 		padding: 24px 16px;
 	}
 }
+
+/* ---- MENU MOBILE "PLUS" ---- */
+.mobile-menu-item {
+	display: flex;
+	align-items: center;
+	gap: 14px;
+	padding: 14px 20px;
+	font-size: 15px;
+	font-weight: 500;
+	color: var(--text);
+	cursor: pointer;
+	transition: background 0.15s;
+}
+.mobile-menu-item:hover {
+	background: var(--bg3);
+}
+.mobile-menu-item svg {
+	flex-shrink: 0;
+	color: var(--text2);
+}
+
+@media (max-width: 480px) {
+	/* Ajuster padding bas du contenu principal pour le menu */
+	.main-inner {
+		padding-bottom: 100px !important;
+	}
+	.chat-window {
+		padding-bottom: 60px;
+	}
+}

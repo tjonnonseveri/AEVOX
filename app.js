@@ -489,8 +489,14 @@ const V = (window.V = {
 		avEl.innerHTML = currentUser.avatar
 			? `<img src="${currentUser.avatar}" alt="">`
 			: currentUser.name[0].toUpperCase();
+		// Sidebar admin
 		$("nav-admin").style.display =
 			currentUser.role === "admin" ? "flex" : "none";
+		// Menu mobile admin
+		const mobileAdmin = $("mobile-admin-item");
+		if (mobileAdmin)
+			mobileAdmin.style.display =
+				currentUser.role === "admin" ? "flex" : "none";
 	},
 
 	// ---- NAV MOBILE ----
@@ -501,11 +507,48 @@ const V = (window.V = {
 			.forEach((el) => el.classList.remove("active"));
 		const active = $("mnav-" + page);
 		if (active) active.classList.add("active");
+		// Pages dans le menu "Plus" → activer le bouton Plus
+		const morePages = [
+			"profile",
+			"groups",
+			"notifications",
+			"settings",
+			"admin",
+		];
+		if (morePages.includes(page)) {
+			const moreBtn = $("mnav-more");
+			if (moreBtn) moreBtn.classList.add("active");
+		}
 	},
 
 	showMobileNav() {
 		const nav = $("mobile-nav");
 		if (nav && window.innerWidth <= 480) nav.style.display = "flex";
+		// Afficher l'onglet admin si admin
+		const adminItem = $("mobile-admin-item");
+		if (adminItem)
+			adminItem.style.display = currentUser?.role === "admin" ? "flex" : "none";
+	},
+
+	toggleMobileMenu() {
+		const menu = $("mobile-menu");
+		const overlay = $("mobile-menu-overlay");
+		const isOpen = menu && menu.style.display !== "none";
+		if (isOpen) {
+			this.closeMobileMenu();
+		} else {
+			if (menu) menu.style.display = "block";
+			if (overlay) overlay.style.display = "block";
+			const moreBtn = $("mnav-more");
+			if (moreBtn) moreBtn.classList.add("active");
+		}
+	},
+
+	closeMobileMenu() {
+		const menu = $("mobile-menu");
+		const overlay = $("mobile-menu-overlay");
+		if (menu) menu.style.display = "none";
+		if (overlay) overlay.style.display = "none";
 	},
 
 	// ---- NAVIGATION ----
@@ -528,6 +571,7 @@ const V = (window.V = {
 
 		// Mettre à jour la navigation mobile
 		this.setMobileNav(page);
+		this.closeMobileMenu();
 
 		// Afficher/cacher le panneau droit
 		const rightPanel = $("right-panel");
