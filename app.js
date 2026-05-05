@@ -503,14 +503,18 @@ const V = (window.V = {
 						(p.type === "followers" &&
 							(currentUser.following || []).includes(p.authorId)),
 				);
-			feed.innerHTML = posts.length
-				? ""
-				: '<div class="empty-state"><p>Aucune publication. Soyez le premier !</p></div>';
-			for (const post of posts) {
-				const div = document.createElement("div");
-				div.innerHTML = await this.postHTML(post);
-				feed.appendChild(div.firstChild);
+			if (!posts.length) {
+				feed.innerHTML =
+					'<div class="empty-state"><p>Aucune publication. Soyez le premier !</p></div>';
+				return;
 			}
+			feed.innerHTML =
+				'<div class="loading-screen" style="height:100px"><div class="spinner"></div></div>';
+			const htmlParts = await Promise.all(posts.map((p) => this.postHTML(p)));
+			if (!$("feed-container")) return;
+			feed.innerHTML =
+				htmlParts.filter(Boolean).join("") ||
+				'<div class="empty-state"><p>Aucune publication.</p></div>';
 		});
 		listeners.push(unsub);
 	},
@@ -539,18 +543,17 @@ const V = (window.V = {
 		const unsub = onSnapshot(q, async (snap) => {
 			const feed = $("feed-container");
 			if (!feed) return;
-			feed.innerHTML = "";
 			const posts = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 			if (!posts.length) {
 				feed.innerHTML =
 					'<div class="empty-state"><p>Aucune publication publique.</p></div>';
 				return;
 			}
-			for (const post of posts) {
-				const div = document.createElement("div");
-				div.innerHTML = await this.postHTML(post);
-				feed.appendChild(div.firstChild);
-			}
+			feed.innerHTML =
+				'<div class="loading-screen" style="height:100px"><div class="spinner"></div></div>';
+			const htmlParts = await Promise.all(posts.map((p) => this.postHTML(p)));
+			if (!$("feed-container")) return;
+			feed.innerHTML = htmlParts.filter(Boolean).join("");
 		});
 		listeners.push(unsub);
 	},
@@ -626,17 +629,30 @@ const V = (window.V = {
 	// ---- HTML D'UN POST ----
 
 	async postHTML(post) {
+		if (!post || !post.id) return "";
 		// Récupérer les infos de l'auteur
-		let author = currentUser.id === post.authorId ? currentUser : null;
-		if (!author) {
+		let author = null;
+		if (post.authorId === currentUser?.id) {
+			author = currentUser;
+		} else if (post.authorId) {
 			try {
 				const snap = await getDoc(doc(db, "users", post.authorId));
 				author = snap.exists()
 					? { id: snap.id, ...snap.data() }
-					: { name: "Utilisateur", handle: "user", avatarColor: "#888" };
+					: {
+							name: post.authorName || "Utilisateur",
+							handle: post.authorHandle || "user",
+							avatarColor: "#888",
+						};
 			} catch {
-				author = { name: "?", handle: "?", avatarColor: "#888" };
+				author = {
+					name: post.authorName || "Utilisateur",
+					handle: post.authorHandle || "user",
+					avatarColor: "#888",
+				};
 			}
+		} else {
+			author = { name: "Utilisateur", handle: "user", avatarColor: "#888" };
 		}
 
 		const isLiked = (post.likes || []).includes(currentUser.id);
@@ -1880,11 +1896,22 @@ const V = (window.V = {
       </div>`;
 
 		const postsContainer = $("admin-posts");
-		postsContainer.innerHTML = "";
-		for (const p of posts.slice(0, 5)) {
-			const div = document.createElement("div");
-			div.innerHTML = await this.postHTML(p);
-			postsContainer.appendChild(div.firstChild);
+		if (!postsContainer) return;
+		if (!posts.length) {
+			postsContainer.innerHTML =
+				'<div class="empty-state"><p>Aucune publication.</p></div>';
+			return;
+		}
+		try {
+			const htmlParts = await Promise.all(
+				posts.slice(0, 10).map((p) => this.postHTML(p)),
+			);
+			postsContainer.innerHTML =
+				htmlParts.filter(Boolean).join("") ||
+				'<div class="empty-state"><p>Aucune publication.</p></div>';
+		} catch (e) {
+			postsContainer.innerHTML =
+				'<div class="empty-state"><p>Erreur lors du chargement des publications.</p></div>';
 		}
 	},
 
