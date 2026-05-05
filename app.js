@@ -1282,15 +1282,22 @@ const V = (window.V = {
 
 	async newMessage() {
 		const snap = await getDocs(collection(db, "users"));
+		const myFollowing = currentUser.following || [];
+		const myFollowers = currentUser.followers || [];
+		const knownIds = new Set([...myFollowing, ...myFollowers]);
 		const users = snap.docs
-			.filter((d) => d.id !== currentUser.id && !d.data().banned)
+			.filter(
+				(d) =>
+					d.id !== currentUser.id && !d.data().banned && knownIds.has(d.id),
+			)
 			.map((d) => ({ id: d.id, ...d.data() }));
 		this.showModal(`
       <div class="modal-title">Nouveau message</div>
       ${
-				users
-					.map(
-						(u) => `
+				users.length
+					? users
+							.map(
+								(u) => `
         <div class="msg-item"
           onclick="V.closeModal();V.go('chat',{uid:'${u.id}',cid:''})">
           ${avatarHTML(u)}
@@ -1299,8 +1306,14 @@ const V = (window.V = {
             <div class="msg-preview">@${esc(u.handle)}</div>
           </div>
         </div>`,
-					)
-					.join("") || '<p style="color:var(--text3)">Aucun utilisateur.</p>'
+							)
+							.join("")
+					: `<div class="empty-state" style="padding:24px">
+          <p>Aucun contact disponible.</p>
+          <p style="font-size:13px;margin-top:8px;color:var(--text3)">
+            Suivez des utilisateurs ou attendez qu'ils vous suivent pour leur envoyer un message.
+          </p>
+        </div>`
 			}`);
 	},
 
@@ -1315,20 +1328,23 @@ const V = (window.V = {
 
 		const snap = await getDocs(collection(db, "groups"));
 		const groups = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+		// Seulement les groupes dont on est membre
 		const mine = groups.filter((g) =>
 			(g.members || []).includes(currentUser.id),
-		);
-		const others = groups.filter(
-			(g) => !(g.members || []).includes(currentUser.id),
 		);
 
 		el.innerHTML = `
       <div style="max-width:680px;margin:0 auto;padding:0 16px 40px">
         <div class="page-header"><div class="page-title">Groupes</div></div>
-        <button class="btn-primary" style="margin:16px 0;width:100%" onclick="V.showCreateGroupModal()">+ Créer un groupe</button>
-        ${mine.length ? `<div class="rp-title" style="margin-bottom:8px">Mes groupes</div>${mine.map((g) => this.groupItemHTML(g, true)).join("")}` : ""}
-        ${others.length ? `<div class="rp-title" style="margin:16px 0 8px">Rejoindre un groupe</div>${others.map((g) => this.groupItemHTML(g, false)).join("")}` : ""}
-        ${!groups.length ? '<div class="empty-state"><p>Aucun groupe. Créez le premier !</p></div>' : ""}
+        <button class="btn-primary" style="margin:16px 0;width:100%" onclick="V.showCreateGroupModal()">+ Cr\u00e9er un groupe</button>
+        ${
+					mine.length
+						? mine.map((g) => this.groupItemHTML(g, true)).join("")
+						: `<div class="empty-state">
+               <p>Vous n'\u00eates membre d'aucun groupe.</p>
+               <p style="font-size:13px;margin-top:8px;color:var(--text3)">Cr\u00e9ez un groupe ou attendez une invitation.</p>
+             </div>`
+				}
       </div>`;
 	},
 
@@ -1545,13 +1561,16 @@ const V = (window.V = {
             <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
           </svg>
           <input type="text" id="search-input"
-            placeholder="Rechercher des utilisateurs ou publications..."
+            placeholder="Entrez un pseudo exact (@utilisateur) ou un mot-cl\u00e9..."
             oninput="V.doSearch(this.value)"
             autofocus/>
         </div>
         <div class="tab-bar">
-          <div class="tab active" id="tab-users" onclick="V.setSearchTab('users')">Personnes</div>
-          <div class="tab"       id="tab-posts" onclick="V.setSearchTab('posts')">Publications</div>
+          <div class="tab active" id="tab-users" onclick="V.setSearchTab('users')">&#128100; Utilisateurs</div>
+          <div class="tab"       id="tab-posts" onclick="V.setSearchTab('posts')">&#128196; Publications</div>
+        </div>
+        <div style="background:var(--bg3);border-radius:var(--radius-sm);padding:10px 14px;margin-top:8px;font-size:13px;color:var(--text3)">
+          &#128274; Pour trouver un utilisateur, entrez son <strong style="color:var(--text2)">pseudo exact</strong> (ex&nbsp;: <span style="color:var(--accent2)">@jean123</span>)
         </div>
         <div id="search-results" style="padding-top:8px"></div>
       </div>`;
@@ -1577,37 +1596,50 @@ const V = (window.V = {
 			'<div class="loading-screen" style="height:100px"><div class="spinner"></div></div>';
 
 		if (searchTab === "users") {
+			// Recherche uniquement par pseudo exact (avec ou sans @)
+			const handle = q.trim().replace(/^@/, "").toLowerCase();
+			if (handle.length < 2) {
+				results.innerHTML =
+					'<div class="empty-state"><p>Entrez un pseudo pour rechercher un utilisateur.</p></div>';
+				return;
+			}
 			const snap = await getDocs(collection(db, "users"));
 			const users = snap.docs
 				.filter((d) => d.id !== currentUser.id && !d.data().banned)
 				.map((d) => ({ id: d.id, ...d.data() }))
-				.filter(
-					(u) =>
-						u.name?.toLowerCase().includes(q.toLowerCase()) ||
-						u.handle?.toLowerCase().includes(q.toLowerCase()),
-				);
-			results.innerHTML =
-				users
-					.map(
-						(u) => `
+				.filter((u) => u.handle?.toLowerCase() === handle); // correspondance exacte uniquement
+
+			if (!users.length) {
+				results.innerHTML = `
+          <div class="empty-state">
+            <p>Aucun utilisateur avec le pseudo <strong>@${esc(handle)}</strong></p>
+            <p style="font-size:13px;margin-top:8px">Le pseudo doit \u00eatre exact.</p>
+          </div>`;
+				return;
+			}
+
+			results.innerHTML = users
+				.map(
+					(u) => `
         <div class="user-card" onclick="V.go('profile','${u.id}')">
           ${avatarHTML(u)}
           <div class="user-card-info">
-            <div class="user-card-name">${esc(u.name)}</div>
-            <div class="user-card-bio">
-              @${esc(u.handle)}${u.bio ? " · " + esc(u.bio.substring(0, 40)) : ""}
+            <div class="user-card-name" style="display:flex;align-items:center;gap:6px">
+              ${esc(u.name)}
+              ${u.role === "certified" ? '<span style="color:#4a9eff;font-size:13px">&#9989;</span>' : ""}
+              ${u.role === "admin" ? '<span style="color:#7c6af7;font-size:13px">&#128737;</span>' : ""}
             </div>
+            <div class="user-card-bio">@${esc(u.handle)}</div>
           </div>
           <button class="btn-follow ${(currentUser.following || []).includes(u.id) ? "following" : ""}"
             onclick="event.stopPropagation();V.toggleFollow('${u.id}',this)">
             ${(currentUser.following || []).includes(u.id) ? "Suivi" : "Suivre"}
           </button>
         </div>`,
-					)
-					.join("") ||
-				'<div class="empty-state"><p>Aucun utilisateur trouvé.</p></div>';
+				)
+				.join("");
 		} else {
-			// Pas de filtre where() pour éviter les index Firestore
+			// Recherche de posts publics
 			const snap = await getDocs(
 				query(
 					collection(db, "posts"),
@@ -1630,7 +1662,7 @@ const V = (window.V = {
 			}
 			if (!posts.length)
 				results.innerHTML =
-					'<div class="empty-state"><p>Aucune publication trouvée.</p></div>';
+					'<div class="empty-state"><p>Aucune publication trouv\u00e9e.</p></div>';
 		}
 	},
 
@@ -2928,40 +2960,11 @@ const V = (window.V = {
 			}
 		} catch {}
 
-		// Suggestions
-		try {
-			const snap = await getDocs(collection(db, "users"));
-			const users = snap.docs
-				.filter((d) => d.id !== currentUser.id && !d.data().banned)
-				.map((d) => ({ id: d.id, ...d.data() }))
-				// Suggérer les plus suivis, et exclure ceux déjà suivis
-				.filter((u) => !(currentUser.following || []).includes(u.id))
-				.sort((a, b) => (b.followers || []).length - (a.followers || []).length)
-				.slice(0, 3);
-
-			const suggsEl = $("suggestions-panel");
-			if (suggsEl) {
-				suggsEl.innerHTML = users.length
-					? users
-							.map(
-								(u) => `
-          <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
-            ${avatarHTML(u)}
-            <div style="flex:1;cursor:pointer;min-width:0" onclick="V.go('profile','${u.id}')">
-              <div style="font-size:13px;font-weight:500;display:flex;align-items:center;gap:4px">
-                ${esc(u.name)}
-                ${u.role === "certified" ? '<span style="color:#4a9eff;font-size:12px">&#9989;</span>' : ""}
-                ${u.role === "admin" ? '<span style="color:#7c6af7;font-size:12px">&#128737;</span>' : ""}
-              </div>
-              <div style="font-size:12px;color:var(--text3)">@${esc(u.handle || "")} · ${(u.followers || []).length} abonn\u00e9(s)</div>
-            </div>
-            <button class="btn-follow" onclick="V.toggleFollow('${u.id}',this)">Suivre</button>
-          </div>`,
-							)
-							.join("")
-					: '<p style="font-size:13px;color:var(--text3)">Vous suivez tout le monde !</p>';
-			}
-		} catch {}
+		// Suggestions — supprimées pour respecter la confidentialité des utilisateurs
+		const suggsEl = $("suggestions-panel");
+		if (suggsEl)
+			suggsEl.innerHTML =
+				'<p style="font-size:13px;color:var(--text3)">Recherchez un utilisateur par son pseudo exact dans l\'onglet Recherche.</p>';
 	},
 
 	// ---- MODAL ----
