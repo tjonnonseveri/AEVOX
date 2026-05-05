@@ -565,8 +565,8 @@ const V = (window.V = {
           <textarea id="compose-text" placeholder="Exprime-toi sur Aevox..." maxlength="280" oninput="V.updateCharCount(this)"></textarea>
           <div class="compose-footer">
             <select class="compose-select" id="compose-type">
-              <option value="public">🌍 Public</option>
-              <option value="followers">👥 Abonnés</option>
+              <option value="public">&#127757; Public</option>
+              <option value="followers">&#128101; Abonnés</option>
             </select>
             <div style="display:flex;align-items:center;gap:10px">
               <span class="char-count" id="char-count">280</span>
@@ -643,8 +643,9 @@ const V = (window.V = {
 		const canDelete =
 			post.authorId === currentUser.id || currentUser.role === "admin";
 		const badges = {
-			public: '<span class="post-badge badge-public">🌍 Public</span>',
-			followers: '<span class="post-badge badge-followers">👥 Abonnés</span>',
+			public: '<span class="post-badge badge-public">&#127757; Public</span>',
+			followers:
+				'<span class="post-badge badge-followers">&#128101; Abonnés</span>',
 		};
 
 		return `
@@ -845,12 +846,12 @@ const V = (window.V = {
                 <polyline points="15 18 9 12 15 6"/>
               </svg>
             </button>
-            <div style="width:36px;height:36px;border-radius:12px;background:var(--accent-bg2);display:flex;align-items:center;justify-content:center;font-size:20px">${group.emoji || "💬"}</div>
+            <div style="width:36px;height:36px;border-radius:12px;background:var(--accent-bg2);display:flex;align-items:center;justify-content:center;font-size:20px">${group.emoji || String.fromCodePoint(0x1f4ac)}</div>
             <div>
               <div style="font-weight:500;font-size:15px">${esc(group.name)}</div>
               <div style="font-size:12px;color:var(--text3)">${(group.members || []).length} membre(s)</div>
             </div>
-            <button class="btn-secondary" style="margin-left:auto;font-size:12px;padding:6px 10px" onclick="V.manageGroup('${groupId}')">⚙️ Gérer</button>
+            <button class="btn-secondary" style="margin-left:auto;font-size:12px;padding:6px 10px" onclick="V.manageGroup('${groupId}')">&#9881; Gérer</button>
           </div>
           <div class="chat-messages" id="chat-messages">
             <div class="empty-state" style="padding:24px"><p>Début de la discussion du groupe</p></div>
@@ -1161,7 +1162,7 @@ const V = (window.V = {
 		const isOwner = g.createdBy === currentUser.id;
 		return `
       <div class="group-item">
-        <div class="group-icon">${g.emoji || "💬"}</div>
+        <div class="group-icon">${g.emoji || String.fromCodePoint(0x1f4ac)}</div>
         <div style="flex:1;cursor:pointer" onclick="V.openGroup('${g.id}')">
           <div style="font-size:14px;font-weight:500">${esc(g.name)}</div>
           <div style="font-size:12px;color:var(--text3)">${(g.members || []).length} membre${(g.members || []).length > 1 ? "s" : ""}</div>
@@ -1295,7 +1296,18 @@ const V = (window.V = {
 	},
 
 	showCreateGroupModal() {
-		const emojis = ["🎨", "💻", "🎵", "🎮", "📚", "🏃", "🍕", "✈️", "💡", "🌿"];
+		const emojis = [
+			String.fromCodePoint(0x1f3a8),
+			String.fromCodePoint(0x1f4bb),
+			String.fromCodePoint(0x1f3b5),
+			String.fromCodePoint(0x1f3ae),
+			String.fromCodePoint(0x1f4da),
+			String.fromCodePoint(0x1f3c3),
+			String.fromCodePoint(0x1f355),
+			String.fromCodePoint(0x2708),
+			String.fromCodePoint(0x1f4a1),
+			String.fromCodePoint(0x1f33f),
+		];
 		this.showModal(`
       <div class="modal-title">Créer un groupe</div>
       <div class="form-group">
@@ -1313,7 +1325,7 @@ const V = (window.V = {
 						)
 						.join("")}
         </div>
-        <input type="hidden" id="group-emoji" value="${emojis[0]}">
+        <input type="hidden" id="group-emoji" id="group-emoji-hidden">
       </div>
       <div style="display:flex;gap:10px;margin-top:20px">
         <button class="btn-secondary" onclick="V.closeModal()">Annuler</button>
@@ -1331,7 +1343,7 @@ const V = (window.V = {
 
 	async createGroup() {
 		const name = $("group-name")?.value?.trim();
-		const emoji = $("group-emoji")?.value || "💬";
+		const emoji = $("group-emoji")?.value || String.fromCodePoint(0x1f4ac);
 		if (!name) {
 			$("group-name")?.focus();
 			return;
