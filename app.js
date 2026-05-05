@@ -810,6 +810,15 @@ const V = (window.V = {
 			followers:
 				'<span class="post-badge badge-followers">&#128101; Abonnés</span>',
 		};
+		// Badge de rôle visible sur le post
+		const roleBadge =
+			author.role === "certified"
+				? ' <span title="Certifié" style="color:#4a9eff;font-size:14px">&#9989;</span>'
+				: author.role === "admin"
+					? ' <span title="Admin" style="color:#7c6af7;font-size:14px">&#128737;</span>'
+					: author.customRole
+						? ` <span style="font-size:11px;color:#f5a623;background:rgba(245,166,35,0.12);padding:1px 6px;border-radius:10px">${esc(author.customRole)}</span>`
+						: "";
 
 		return `
       <div class="post" id="post-${post.id}">
@@ -819,7 +828,7 @@ const V = (window.V = {
             <span class="post-author" style="cursor:pointer"
               onclick="V.go('profile','${author.id || post.authorId}')">
               ${esc(author.name)}
-            </span>
+            </span>${roleBadge}
             <span class="post-handle">@${esc(author.handle || "")}</span>
             <span class="post-time">${timeAgo(post.createdAt)}</span>
           </div>
@@ -2122,20 +2131,23 @@ const V = (window.V = {
 	},
 
 	adminUserRow(u) {
-		const roleColor = u.banned
-			? "#f26b6b"
-			: u.role === "admin"
-				? "#7c6af7"
-				: u.customRole
-					? "#f5a623"
-					: "#888";
-		const roleLabel = u.banned
-			? "&#128683; Banni"
-			: u.role === "admin"
-				? "&#128737; Admin"
-				: u.customRole
-					? esc(u.customRole)
-					: "Membre";
+		let roleColor, roleLabel;
+		if (u.banned) {
+			roleColor = "#f26b6b";
+			roleLabel = "&#128683; Banni";
+		} else if (u.role === "admin") {
+			roleColor = "#7c6af7";
+			roleLabel = "&#128737; Admin";
+		} else if (u.role === "certified") {
+			roleColor = "#4a9eff";
+			roleLabel = "&#9989; Certifi\u00e9";
+		} else if (u.customRole) {
+			roleColor = "#f5a623";
+			roleLabel = esc(u.customRole);
+		} else {
+			roleColor = "#888";
+			roleLabel = "&#128100; Membre";
+		}
 		return `
       <tr id="urow-${u.id}" style="${u.banned ? "opacity:0.55" : ""}">
         <td>
@@ -2149,7 +2161,10 @@ const V = (window.V = {
           </div>
         </td>
         <td>
-          <span class="badge" style="background:${roleColor}22;color:${roleColor}">${roleLabel}</span>
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <span class="badge" style="background:${roleColor}22;color:${roleColor}">${roleLabel}</span>
+            ${u.customRole && !u.banned ? `<span class="badge" style="background:#f5a62322;color:#f5a623;font-size:10px">${esc(u.customRole)}</span>` : ""}
+          </div>
         </td>
         <td style="font-size:12px;color:var(--text3)">${esc(u.email || "")}</td>
         <td>
@@ -2506,17 +2521,29 @@ const V = (window.V = {
 
 		this.showModal(`
       <div class="modal-title">R\u00f4le de ${esc(name)}</div>
+
+      <!-- Aperçu -->
+      <div style="background:var(--bg3);border-radius:var(--radius-sm);padding:12px;margin-bottom:16px;font-size:13px;color:var(--text2)">
+        R\u00f4le actuel :
+        <strong style="color:var(--text)">
+          ${currentRole === "admin" ? "&#128737; Admin" : currentRole === "certified" ? "&#9989; Certifi\u00e9" : "&#128100; Membre"}
+          ${currentCustomRole ? " + " + esc(currentCustomRole) : ""}
+        </strong>
+      </div>
+
       <div class="form-group">
         <label class="form-label">R\u00f4le syst\u00e8me</label>
         <select class="form-input" id="role-system">
-          <option value="user"  ${currentRole !== "admin" ? "selected" : ""}>&#128100; Membre</option>
-          <option value="admin" ${currentRole === "admin" ? "selected" : ""}>&#128737; Admin</option>
+          <option value="user"      ${currentRole === "user" || !currentRole ? "selected" : ""}>&#128100; Membre</option>
+          <option value="certified" ${currentRole === "certified" ? "selected" : ""}>&#9989; Certifi\u00e9</option>
+          <option value="admin"     ${currentRole === "admin" ? "selected" : ""}>&#128737; Admin</option>
         </select>
       </div>
+
       <div class="form-group">
-        <label class="form-label">R\u00f4le personnalis\u00e9</label>
+        <label class="form-label">R\u00f4le personnalis\u00e9 (optionnel)</label>
         <select class="form-input" id="role-custom">
-          <option value="">Aucun</option>
+          <option value="">-- Aucun --</option>
           ${customRoles
 						.map(
 							(r) =>
@@ -2524,20 +2551,37 @@ const V = (window.V = {
 						)
 						.join("")}
         </select>
+        ${
+					!customRoles.length
+						? `<div style="font-size:12px;color:var(--text3);margin-top:6px">
+          Aucun r\u00f4le personnalis\u00e9. <span style="color:var(--accent2);cursor:pointer" onclick="V.closeModal();V.adminTab('roles')">En cr\u00e9er un ?</span>
+        </div>`
+						: ""
+				}
       </div>
+
       <div class="btn-row">
         <button class="btn-secondary" onclick="V.closeModal()">Annuler</button>
-        <button class="btn-primary" onclick="V.applyRole('${uid}')">Appliquer</button>
+        <button class="btn-primary" onclick="V.applyRole('${uid}')">&#10003; Appliquer</button>
       </div>`);
 	},
 
 	async applyRole(uid) {
-		const systemRole = $("role-system")?.value;
-		const customRole = $("role-custom")?.value;
+		const systemRole = $("role-system")?.value || "user";
+		const customRole = $("role-custom")?.value || null;
+
 		await updateDoc(doc(db, "users", uid), {
 			role: systemRole,
-			customRole: customRole || null,
+			customRole: customRole,
 		});
+
+		// Si c'est l'utilisateur courant, mettre à jour localement
+		if (uid === currentUser.id) {
+			currentUser.role = systemRole;
+			currentUser.customRole = customRole;
+			this.updateSidebar();
+		}
+
 		this.closeModal();
 		this.adminTab("users");
 	},
