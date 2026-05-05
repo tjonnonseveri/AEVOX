@@ -299,6 +299,7 @@ onAuthStateChanged(auth, async (firebaseUser) => {
 		$("auth-screen").style.display = "none";
 		$("app").style.display = "block";
 		V.updateSidebar();
+		V.showMobileNav();
 		V.go("home");
 		V.loadRightPanel();
 		listenOnlineUsers();
@@ -404,6 +405,21 @@ const V = (window.V = {
 			currentUser.role === "admin" ? "flex" : "none";
 	},
 
+	// ---- NAV MOBILE ----
+
+	setMobileNav(page) {
+		document
+			.querySelectorAll(".mobile-nav-item")
+			.forEach((el) => el.classList.remove("active"));
+		const active = $("mnav-" + page);
+		if (active) active.classList.add("active");
+	},
+
+	showMobileNav() {
+		const nav = $("mobile-nav");
+		if (nav && window.innerWidth <= 480) nav.style.display = "flex";
+	},
+
 	// ---- NAVIGATION ----
 
 	go(page, data = null) {
@@ -415,12 +431,15 @@ const V = (window.V = {
 			chatUnsub = null;
 		}
 
-		// Mettre à jour la navigation active
+		// Mettre à jour la navigation active (sidebar)
 		document
 			.querySelectorAll(".nav-item")
 			.forEach((n) => n.classList.remove("active"));
 		const navEl = $("nav-" + page);
 		if (navEl) navEl.classList.add("active");
+
+		// Mettre à jour la navigation mobile
+		this.setMobileNav(page);
 
 		// Afficher/cacher le panneau droit
 		const rightPanel = $("right-panel");

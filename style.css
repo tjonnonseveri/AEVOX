@@ -1363,3 +1363,271 @@ body {
 	font-size: 12px;
 	color: var(--text3);
 }
+
+/* ================================================
+   RESPONSIVE — MOBILE & TABLETTE
+   ================================================ */
+
+/* ---- TABLETTE (< 1100px) : cacher le panneau droit ---- */
+@media (max-width: 1099px) {
+	.right-panel {
+		display: none !important;
+	}
+}
+
+/* ---- TABLETTE (< 768px) : sidebar réduite ---- */
+@media (max-width: 768px) {
+	:root {
+		--sidebar-w: 64px;
+	}
+
+	.sidebar {
+		width: var(--sidebar-w);
+		padding: 12px 8px;
+		align-items: center;
+	}
+	.sidebar-logo span,
+	.nav-item span:not(.nav-badge),
+	.profile-info,
+	.sidebar-bottom .nav-item span:not(.nav-badge) {
+		display: none;
+	}
+
+	.sidebar-logo {
+		padding: 8px 0 20px;
+		justify-content: center;
+	}
+	.nav-item {
+		justify-content: center;
+		padding: 12px 0;
+		width: 100%;
+	}
+	.nav-item svg {
+		width: 22px;
+		height: 22px;
+	}
+	.nav-badge {
+		position: absolute;
+		top: 4px;
+		right: 4px;
+		padding: 1px 4px;
+		min-width: 14px;
+		font-size: 9px;
+	}
+	.nav-item {
+		position: relative;
+	}
+
+	.sidebar-profile {
+		justify-content: center;
+		padding: 10px 0;
+	}
+	.sidebar-bottom {
+		width: 100%;
+	}
+
+	.auth-box {
+		width: 95%;
+		padding: 32px 24px;
+	}
+
+	.main-inner {
+		padding: 0 12px 100px;
+	}
+	.admin-stat-grid {
+		grid-template-columns: repeat(3, 1fr);
+		gap: 8px;
+	}
+	.admin-stat-val {
+		font-size: 20px;
+	}
+}
+
+/* ---- MOBILE (< 480px) : barre de navigation en bas ---- */
+@media (max-width: 480px) {
+	/* Cacher la sidebar latérale */
+	.sidebar {
+		display: none;
+	}
+
+	/* Layout en colonne */
+	.layout {
+		flex-direction: column;
+	}
+
+	/* Contenu prend toute la largeur */
+	.main {
+		width: 100%;
+	}
+	.main-inner {
+		padding: 0 12px 90px;
+	}
+
+	/* ---- BARRE DE NAV MOBILE EN BAS ---- */
+	.mobile-nav {
+		display: flex !important;
+		position: fixed;
+		bottom: 0;
+		left: 0;
+		right: 0;
+		height: 60px;
+		background: var(--bg2);
+		border-top: 1px solid var(--border);
+		z-index: 50;
+		align-items: center;
+		justify-content: space-around;
+		padding: 0 4px;
+		backdrop-filter: blur(12px);
+	}
+	.mobile-nav-item {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 3px;
+		cursor: pointer;
+		color: var(--text3);
+		padding: 6px 10px;
+		border-radius: 10px;
+		transition: color 0.15s;
+		position: relative;
+		flex: 1;
+	}
+	.mobile-nav-item.active {
+		color: var(--accent2);
+	}
+	.mobile-nav-item svg {
+		width: 22px;
+		height: 22px;
+	}
+	.mobile-nav-item span {
+		font-size: 10px;
+		font-weight: 500;
+	}
+	.mobile-nav-badge {
+		position: absolute;
+		top: 2px;
+		right: 8px;
+		background: var(--accent);
+		color: #fff;
+		font-size: 9px;
+		font-weight: 700;
+		padding: 1px 4px;
+		border-radius: 10px;
+		min-width: 14px;
+		text-align: center;
+	}
+
+	/* Page header */
+	.page-header {
+		padding: 12px 0 10px;
+	}
+	.page-title {
+		font-size: 18px;
+	}
+
+	/* Posts */
+	.post {
+		padding: 12px;
+		gap: 10px;
+	}
+	.post-content {
+		font-size: 14px;
+	}
+	.compose-box {
+		padding: 12px;
+		gap: 10px;
+		margin: 12px 0;
+	}
+
+	/* Auth */
+	#auth-screen {
+		padding: 16px;
+		align-items: flex-start;
+		padding-top: 60px;
+	}
+	.auth-box {
+		width: 100%;
+		padding: 28px 20px;
+		border-radius: 20px;
+	}
+	.auth-logo span {
+		font-size: 24px;
+	}
+
+	/* Chat */
+	.chat-input-area {
+		padding: 8px 12px 12px;
+	}
+	.chat-messages {
+		padding: 12px;
+	}
+
+	/* Admin table responsive */
+	.admin-table th:nth-child(3),
+	.admin-table td:nth-child(3) {
+		display: none;
+	}
+	.admin-stat-grid {
+		grid-template-columns: repeat(3, 1fr);
+		gap: 6px;
+	}
+	.admin-stat {
+		padding: 12px 8px;
+	}
+	.admin-stat-val {
+		font-size: 18px;
+	}
+
+	/* Profil */
+	.profile-header {
+		padding: 20px 16px;
+	}
+	.profile-stats {
+		gap: 16px;
+	}
+
+	/* Settings */
+	.settings-section {
+		padding: 16px;
+	}
+	.theme-grid {
+		gap: 8px;
+	}
+	.theme-btn {
+		width: 38px;
+		height: 38px;
+	}
+
+	/* Modale */
+	.modal {
+		padding: 20px 16px;
+		border-radius: 16px;
+		width: 96%;
+	}
+
+	/* Bouton nouveau message */
+	.new-msg-btn {
+		bottom: 72px;
+		right: 16px;
+		width: 46px;
+		height: 46px;
+	}
+
+	/* Groupes */
+	.group-item {
+		padding: 10px;
+	}
+}
+
+/* ---- TRÈS PETIT MOBILE (< 360px) ---- */
+@media (max-width: 360px) {
+	.mobile-nav-item span {
+		display: none;
+	}
+	.mobile-nav-item {
+		padding: 8px 6px;
+	}
+	.auth-box {
+		padding: 24px 16px;
+	}
+}
