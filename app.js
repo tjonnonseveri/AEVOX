@@ -2771,57 +2771,195 @@ const V = (window.V = {
 	// ---- PANNEAU DROIT ----
 
 	async loadRightPanel() {
-		// Tendances
-		const trends = [
-			"#aevox",
-			"#design",
-			"#technologie",
-			"#france",
-			"#coding",
-			"#ia",
-		];
 		const trendsEl = $("trends-panel");
-		if (trendsEl) {
-			trendsEl.innerHTML = trends
-				.slice(0, 5)
-				.map(
-					(tag, i) => `
-        <div class="trend-item">
-          <div class="trend-category">${["Tech", "Design", "Société", "Culture", "Dev"][i]}</div>
-          <div class="trend-tag">${tag}</div>
-          <div class="trend-count">${((Math.random() * 10000 + 500) | 0).toLocaleString()} aevox</div>
-        </div>`,
-				)
-				.join("");
+		if (trendsEl)
+			trendsEl.innerHTML =
+				'<div style="color:var(--text3);font-size:13px">Calcul en cours...</div>';
+
+		try {
+			// Récupérer les 200 derniers posts publics
+			const snap = await getDocs(
+				query(
+					collection(db, "posts"),
+					orderBy("createdAt", "desc"),
+					limit(200),
+				),
+			);
+			const posts = snap.docs.map((d) => d.data());
+
+			// Compter les hashtags
+			const hashtagCount = {};
+			const wordCount = {};
+
+			posts.forEach((p) => {
+				if (!p.content) return;
+				// Hashtags explicites (#motclé)
+				const tags = p.content.match(/#[\wÀ-ÿ]+/g) || [];
+				tags.forEach((t) => {
+					const tag = t.toLowerCase();
+					hashtagCount[tag] = (hashtagCount[tag] || 0) + 1;
+				});
+				// Mots fréquents (> 4 lettres, pas stopwords)
+				const stopwords = new Set([
+					"dans",
+					"avec",
+					"pour",
+					"mais",
+					"donc",
+					"cette",
+					"aussi",
+					"plus",
+					"très",
+					"bien",
+					"tout",
+					"comme",
+					"quand",
+					"après",
+					"avant",
+					"sous",
+					"sans",
+					"alors",
+					"même",
+					"être",
+					"avoir",
+					"faire",
+					"dire",
+					"aller",
+					"voir",
+					"vouloir",
+					"venir",
+					"pouvoir",
+					"devoir",
+					"prendre",
+					"savoir",
+				]);
+				const words = p.content.toLowerCase().match(/[a-zà-ÿ]{5,}/g) || [];
+				words.forEach((w) => {
+					if (!stopwords.has(w)) wordCount[w] = (wordCount[w] || 0) + 1;
+				});
+			});
+
+			// Trier hashtags par fréquence
+			const sortedTags = Object.entries(hashtagCount)
+				.sort((a, b) => b[1] - a[1])
+				.slice(0, 8);
+
+			// Trier mots par fréquence (fallback si peu de hashtags)
+			const sortedWords = Object.entries(wordCount)
+				.sort((a, b) => b[1] - a[1])
+				.slice(0, 8);
+
+			// Construire la liste finale (hashtags en priorité, mots en complément)
+			const trendItems = [];
+
+			sortedTags.forEach(([tag, count]) => {
+				trendItems.push({ tag, count, type: "hashtag" });
+			});
+
+			// Compléter avec des mots populaires si moins de 5 hashtags
+			if (trendItems.length < 5) {
+				sortedWords.slice(0, 5 - trendItems.length).forEach(([word, count]) => {
+					if (!trendItems.find((t) => t.tag === "#" + word)) {
+						trendItems.push({ tag: word, count, type: "mot" });
+					}
+				});
+			}
+
+			if (trendsEl) {
+				if (!trendItems.length) {
+					trendsEl.innerHTML = `
+            <div style="font-size:13px;color:var(--text3);padding:8px 0">
+              Aucune tendance pour l'instant.<br>
+              Publiez des posts avec des <span style="color:var(--accent2)">#hashtags</span> !
+            </div>`;
+				} else {
+					trendsEl.innerHTML = trendItems
+						.slice(0, 6)
+						.map(
+							(t, i) => `
+            <div class="trend-item" onclick="V.go('search');setTimeout(()=>{const si=$('search-input');if(si){si.value='${esc(t.tag)}';V.doSearch('${esc(t.tag)}');V.setSearchTab('posts')}},100)">
+              <div class="trend-category">${t.type === "hashtag" ? "Hashtag tendance" : "Mot populaire"} · #${i + 1}</div>
+              <div class="trend-tag">${t.type === "hashtag" ? esc(t.tag) : "#" + esc(t.tag)}</div>
+              <div class="trend-count">${t.count} publication${t.count > 1 ? "s" : ""}</div>
+            </div>`,
+						)
+						.join("");
+				}
+			}
+		} catch (e) {
+			if (trendsEl)
+				trendsEl.innerHTML =
+					'<div style="font-size:13px;color:var(--text3)">Impossible de charger les tendances.</div>';
 		}
+
+		// Annonces actives
+		try {
+			const annSnap = await getDocs(
+				query(
+					collection(db, "announcements"),
+					orderBy("createdAt", "desc"),
+					limit(3),
+				),
+			);
+			const anns = annSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+			const annEl = $("announcements-panel");
+			if (annEl && anns.length) {
+				const colors = {
+					info: "#4a9eff",
+					success: "#5dd89e",
+					warn: "#f5a623",
+					danger: "#f26b6b",
+				};
+				const icons = { info: "ℹ️", success: "✅", warn: "⚠️", danger: "🚫" };
+				annEl.innerHTML = anns
+					.map((a) => {
+						const c = colors[a.type] || "#4a9eff";
+						return `
+            <div style="background:${c}11;border:1px solid ${c}33;border-radius:var(--radius-sm);padding:12px;margin-bottom:8px">
+              <div style="font-weight:600;font-size:13px;color:${c}">${icons[a.type] || ""} ${esc(a.title)}</div>
+              <div style="font-size:12px;color:var(--text2);margin-top:4px;line-height:1.4">${esc(a.body)}</div>
+              <div style="font-size:11px;color:var(--text3);margin-top:6px">${timeAgo(a.createdAt)}</div>
+            </div>`;
+					})
+					.join("");
+				// Afficher la section si elle a du contenu
+				const annSection = $("announcements-section");
+				if (annSection) annSection.style.display = "block";
+			}
+		} catch {}
 
 		// Suggestions
 		try {
 			const snap = await getDocs(collection(db, "users"));
 			const users = snap.docs
 				.filter((d) => d.id !== currentUser.id && !d.data().banned)
-				.slice(0, 3)
-				.map((d) => ({ id: d.id, ...d.data() }));
+				.map((d) => ({ id: d.id, ...d.data() }))
+				// Suggérer les plus suivis, et exclure ceux déjà suivis
+				.filter((u) => !(currentUser.following || []).includes(u.id))
+				.sort((a, b) => (b.followers || []).length - (a.followers || []).length)
+				.slice(0, 3);
+
 			const suggsEl = $("suggestions-panel");
 			if (suggsEl) {
-				suggsEl.innerHTML =
-					users
-						.map(
-							(u) => `
+				suggsEl.innerHTML = users.length
+					? users
+							.map(
+								(u) => `
           <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
             ${avatarHTML(u)}
-            <div style="flex:1;cursor:pointer" onclick="V.go('profile','${u.id}')">
-              <div style="font-size:13px;font-weight:500">${esc(u.name)}</div>
-              <div style="font-size:12px;color:var(--text3)">@${esc(u.handle || "")}</div>
+            <div style="flex:1;cursor:pointer;min-width:0" onclick="V.go('profile','${u.id}')">
+              <div style="font-size:13px;font-weight:500;display:flex;align-items:center;gap:4px">
+                ${esc(u.name)}
+                ${u.role === "certified" ? '<span style="color:#4a9eff;font-size:12px">&#9989;</span>' : ""}
+                ${u.role === "admin" ? '<span style="color:#7c6af7;font-size:12px">&#128737;</span>' : ""}
+              </div>
+              <div style="font-size:12px;color:var(--text3)">@${esc(u.handle || "")} · ${(u.followers || []).length} abonn\u00e9(s)</div>
             </div>
-            <button class="btn-follow ${(currentUser.following || []).includes(u.id) ? "following" : ""}"
-              onclick="V.toggleFollow('${u.id}',this)">
-              ${(currentUser.following || []).includes(u.id) ? "Suivi" : "Suivre"}
-            </button>
+            <button class="btn-follow" onclick="V.toggleFollow('${u.id}',this)">Suivre</button>
           </div>`,
-						)
-						.join("") ||
-					'<p style="font-size:13px;color:var(--text3)">Aucune suggestion.</p>';
+							)
+							.join("")
+					: '<p style="font-size:13px;color:var(--text3)">Vous suivez tout le monde !</p>';
 			}
 		} catch {}
 	},
