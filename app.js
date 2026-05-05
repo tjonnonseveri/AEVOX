@@ -1561,7 +1561,7 @@ const V = (window.V = {
             <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
           </svg>
           <input type="text" id="search-input"
-            placeholder="Entrez un pseudo exact (@utilisateur) ou un mot-cl\u00e9..."
+            placeholder="Rechercher..."
             oninput="V.doSearch(this.value)"
             autofocus/>
         </div>
@@ -1569,7 +1569,7 @@ const V = (window.V = {
           <div class="tab active" id="tab-users" onclick="V.setSearchTab('users')">&#128100; Utilisateurs</div>
           <div class="tab"       id="tab-posts" onclick="V.setSearchTab('posts')">&#128196; Publications</div>
         </div>
-        <div style="background:var(--bg3);border-radius:var(--radius-sm);padding:10px 14px;margin-top:8px;font-size:13px;color:var(--text3)">
+        <div style="background:var(--bg3);border-radius:var(--radius-sm);padding:10px 14px;margin-top:8px;font-size:13px;color:var(--text3)" id="search-hint">
           &#128274; Pour trouver un utilisateur, entrez son <strong style="color:var(--text2)">pseudo exact</strong> (ex&nbsp;: <span style="color:var(--accent2)">@jean123</span>)
         </div>
         <div id="search-results" style="padding-top:8px"></div>
@@ -1582,16 +1582,56 @@ const V = (window.V = {
 			.querySelectorAll(".tab")
 			.forEach((t) => t.classList.remove("active"));
 		$("tab-" + tab)?.classList.add("active");
+		// Forcer le rechargement avec la valeur actuelle (ou vide pour afficher les derniers posts)
 		this.doSearch($("search-input")?.value || "");
 	},
 
 	async doSearch(q) {
 		const results = $("search-results");
 		if (!results) return;
+
+		// Mettre à jour le hint selon l'onglet actif
+		const hint = $("search-hint");
+		if (hint) {
+			if (searchTab === "users") {
+				hint.innerHTML =
+					'&#128274; Pour trouver un utilisateur, entrez son <strong style="color:var(--text2)">pseudo exact</strong> (ex&nbsp;: <span style="color:var(--accent2)">@jean123</span>)';
+			} else {
+				hint.innerHTML =
+					'&#128269; Recherchez par <strong style="color:var(--text2)">mot-cl\u00e9</strong>, <span style="color:var(--accent2)">#hashtag</span> ou phrase dans les publications publiques';
+			}
+		}
+
 		if (!q.trim()) {
-			results.innerHTML = "";
+			// Onglet publications vide → afficher les derniers posts publics
+			if (searchTab === "posts") {
+				results.innerHTML =
+					'<div class="loading-screen" style="height:100px"><div class="spinner"></div></div>';
+				const snap = await getDocs(
+					query(
+						collection(db, "posts"),
+						orderBy("createdAt", "desc"),
+						limit(20),
+					),
+				);
+				const posts = snap.docs
+					.map((d) => ({ id: d.id, ...d.data() }))
+					.filter((p) => p.type === "public");
+				if (!posts.length) {
+					results.innerHTML =
+						'<div class="empty-state"><p>Aucune publication publique.</p></div>';
+					return;
+				}
+				results.innerHTML =
+					'<div style="font-size:12px;color:var(--text3);padding:8px 0 4px">Derni\u00e8res publications publiques</div>';
+				const htmlParts = await Promise.all(posts.map((p) => this.postHTML(p)));
+				results.innerHTML += htmlParts.filter(Boolean).join("");
+			} else {
+				results.innerHTML = "";
+			}
 			return;
 		}
+
 		results.innerHTML =
 			'<div class="loading-screen" style="height:100px"><div class="spinner"></div></div>';
 
@@ -1607,7 +1647,7 @@ const V = (window.V = {
 			const users = snap.docs
 				.filter((d) => d.id !== currentUser.id && !d.data().banned)
 				.map((d) => ({ id: d.id, ...d.data() }))
-				.filter((u) => u.handle?.toLowerCase() === handle); // correspondance exacte uniquement
+				.filter((u) => u.handle?.toLowerCase() === handle);
 
 			if (!users.length) {
 				results.innerHTML = `
@@ -1639,30 +1679,39 @@ const V = (window.V = {
 				)
 				.join("");
 		} else {
-			// Recherche de posts publics
+			// Recherche dans les publications publiques
 			const snap = await getDocs(
 				query(
 					collection(db, "posts"),
 					orderBy("createdAt", "desc"),
-					limit(100),
+					limit(200),
 				),
 			);
+			const qLower = q.toLowerCase();
 			const posts = snap.docs
 				.map((d) => ({ id: d.id, ...d.data() }))
-				.filter(
-					(p) =>
-						p.type === "public" &&
-						p.content?.toLowerCase().includes(q.toLowerCase()),
-				);
-			results.innerHTML = "";
-			for (const p of posts) {
-				const div = document.createElement("div");
-				div.innerHTML = await this.postHTML(p);
-				results.appendChild(div.firstChild);
+				.filter((p) => {
+					if (p.type !== "public") return false;
+					const content = p.content?.toLowerCase() || "";
+					// Recherche par mot-clé ou hashtag
+					return (
+						content.includes(qLower) ||
+						content.includes(qLower.replace(/^#/, ""))
+					);
+				});
+
+			if (!posts.length) {
+				results.innerHTML = `
+          <div class="empty-state">
+            <p>Aucune publication contenant <strong>"${esc(q)}"</strong></p>
+            <p style="font-size:13px;margin-top:8px;color:var(--text3)">Essayez un autre mot-cl\u00e9 ou hashtag.</p>
+          </div>`;
+				return;
 			}
-			if (!posts.length)
-				results.innerHTML =
-					'<div class="empty-state"><p>Aucune publication trouv\u00e9e.</p></div>';
+
+			results.innerHTML = `<div style="font-size:12px;color:var(--text3);padding:8px 0 4px">${posts.length} r\u00e9sultat${posts.length > 1 ? "s" : ""} pour "${esc(q)}"</div>`;
+			const htmlParts = await Promise.all(posts.map((p) => this.postHTML(p)));
+			results.innerHTML += htmlParts.filter(Boolean).join("");
 		}
 	},
 
