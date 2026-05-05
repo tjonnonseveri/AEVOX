@@ -562,11 +562,7 @@ const V = (window.V = {
       <div class="compose-box" style="margin-top:16px">
         ${avatarHTML(currentUser)}
         <div class="compose-inner">
-          <textarea id="compose-text"
-            placeholder="Exprime-toi sur Aevox..."
-            maxlength="280"
-            oninput="V.updateCharCount(this)">
-          </textarea>
+          <textarea id="compose-text" placeholder="Exprime-toi sur Aevox..." maxlength="280" oninput="V.updateCharCount(this)"></textarea>
           <div class="compose-footer">
             <select class="compose-select" id="compose-type">
               <option value="public">🌍 Public</option>
@@ -574,8 +570,7 @@ const V = (window.V = {
             </select>
             <div style="display:flex;align-items:center;gap:10px">
               <span class="char-count" id="char-count">280</span>
-              <button class="btn-primary" style="padding:8px 18px;font-size:13px"
-                onclick="V.submitPost()">Publier</button>
+              <button class="btn-primary" style="padding:8px 18px;font-size:13px" onclick="V.submitPost()">Publier</button>
             </div>
           </div>
         </div>
@@ -591,19 +586,41 @@ const V = (window.V = {
 	},
 
 	async submitPost() {
-		const text = $("compose-text")?.value?.trim();
-		if (!text || text.length > 280) return;
+		const ta = $("compose-text");
+		if (!ta) return;
+		const text = ta.value.trim();
+		if (!text || text.length > 280) {
+			if (!text) {
+				ta.focus();
+				return;
+			}
+			return;
+		}
 		const type = $("compose-type")?.value || "public";
-		await addDoc(collection(db, "posts"), {
-			authorId: currentUser.id,
-			content: text,
-			type,
-			likes: [],
-			commentCount: 0,
-			createdAt: serverTimestamp(),
-		});
-		$("compose-text").value = "";
-		if ($("char-count")) $("char-count").textContent = "280";
+		const btn = document.querySelector(".compose-box .btn-primary");
+		if (btn) {
+			btn.textContent = "...";
+			btn.disabled = true;
+		}
+		try {
+			await addDoc(collection(db, "posts"), {
+				authorId: currentUser.id,
+				content: text,
+				type,
+				likes: [],
+				commentCount: 0,
+				createdAt: serverTimestamp(),
+			});
+			ta.value = "";
+			if ($("char-count")) $("char-count").textContent = "280";
+		} catch (e) {
+			console.error("Erreur publication:", e);
+			alert("Erreur lors de la publication. Vérifiez votre connexion.");
+		}
+		if (btn) {
+			btn.textContent = "Publier";
+			btn.disabled = false;
+		}
 	},
 
 	// ---- HTML D'UN POST ----
@@ -1030,41 +1047,40 @@ const V = (window.V = {
 		el.innerHTML = `
       <div style="max-width:680px;margin:0 auto;padding:0 16px 40px">
         <div class="page-header"><div class="page-title">Groupes</div></div>
-        <button class="btn-primary" style="margin:16px 0;width:100%"
-          onclick="V.showCreateGroupModal()">+ Créer un groupe</button>
-        ${
-					mine.length
-						? `<div class="rp-title" style="margin-bottom:8px">Mes groupes</div>
-             ${mine.map((g) => this.groupItemHTML(g, true)).join("")}`
-						: ""
-				}
-        ${
-					others.length
-						? `<div class="rp-title" style="margin:16px 0 8px">Rejoindre un groupe</div>
-             ${others.map((g) => this.groupItemHTML(g, false)).join("")}`
-						: ""
-				}
+        <button class="btn-primary" style="margin:16px 0;width:100%" onclick="V.showCreateGroupModal()">+ Créer un groupe</button>
+        ${mine.length ? `<div class="rp-title" style="margin-bottom:8px">Mes groupes</div>${mine.map((g) => this.groupItemHTML(g, true)).join("")}` : ""}
+        ${others.length ? `<div class="rp-title" style="margin:16px 0 8px">Rejoindre un groupe</div>${others.map((g) => this.groupItemHTML(g, false)).join("")}` : ""}
         ${!groups.length ? '<div class="empty-state"><p>Aucun groupe. Créez le premier !</p></div>' : ""}
       </div>`;
 	},
 
 	groupItemHTML(g, isMember) {
+		const isOwner = g.createdBy === currentUser.id;
 		return `
       <div class="group-item">
         <div class="group-icon">${g.emoji || "💬"}</div>
-        <div style="flex:1">
+        <div style="flex:1;cursor:pointer" onclick="V.openGroup('${g.id}')">
           <div style="font-size:14px;font-weight:500">${esc(g.name)}</div>
-          <div style="font-size:12px;color:var(--text3)">
-            ${(g.members || []).length} membre${(g.members || []).length > 1 ? "s" : ""}
-          </div>
+          <div style="font-size:12px;color:var(--text3)">${(g.members || []).length} membre${(g.members || []).length > 1 ? "s" : ""}</div>
         </div>
-        ${
-					isMember
-						? `<button class="btn-secondary" style="font-size:12px;padding:6px 12px"
-               onclick="V.go('chat',{uid:'__group__',cid:'${g.id}'})">Ouvrir</button>`
-						: `<button class="btn-follow" onclick="V.joinGroup('${g.id}')">Rejoindre</button>`
-				}
+        <div style="display:flex;gap:6px">
+          ${
+						isMember
+							? `<button class="btn-secondary" style="font-size:12px;padding:6px 10px" onclick="V.openGroup('${g.id}')">Ouvrir</button>
+               <button class="btn-secondary" style="font-size:12px;padding:6px 10px" onclick="V.manageGroup('${g.id}')">&#9881;</button>
+               ${
+									isOwner
+										? `<button class="btn-danger" style="font-size:12px;padding:6px 10px" onclick="V.deleteGroup('${g.id}')">Suppr.</button>`
+										: `<button class="btn-secondary" style="font-size:12px;padding:6px 10px;color:var(--danger)" onclick="V.leaveGroup('${g.id}')">Quitter</button>`
+								}`
+							: `<button class="btn-follow" onclick="V.joinGroup('${g.id}')">Rejoindre</button>`
+					}
+        </div>
       </div>`;
+	},
+
+	openGroup(groupId) {
+		this.go("chat", { uid: "__group__", cid: groupId });
 	},
 
 	async joinGroup(groupId) {
@@ -1072,6 +1088,107 @@ const V = (window.V = {
 			members: arrayUnion(currentUser.id),
 		});
 		this.go("groups");
+	},
+
+	async leaveGroup(groupId) {
+		if (!confirm("Quitter ce groupe ?")) return;
+		await updateDoc(doc(db, "groups", groupId), {
+			members: arrayRemove(currentUser.id),
+		});
+		this.go("groups");
+	},
+
+	async deleteGroup(groupId) {
+		if (!confirm("Supprimer ce groupe définitivement ?")) return;
+		await deleteDoc(doc(db, "groups", groupId));
+		this.go("groups");
+	},
+
+	async manageGroup(groupId) {
+		const snap = await getDoc(doc(db, "groups", groupId));
+		if (!snap.exists()) return;
+		const g = { id: snap.id, ...snap.data() };
+		const usersSnap = await getDocs(collection(db, "users"));
+		const allUsers = usersSnap.docs
+			.map((d) => ({ id: d.id, ...d.data() }))
+			.filter((u) => !u.banned);
+		const members = g.members || [];
+		const nonMembers = allUsers.filter(
+			(u) => !members.includes(u.id) && u.id !== currentUser.id,
+		);
+
+		const membersList = members
+			.map((uid) => {
+				const u = allUsers.find((x) => x.id === uid);
+				if (!u) return "";
+				return `
+        <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
+          ${avatarHTML(u)}
+          <div style="flex:1"><div style="font-size:13px;font-weight:500">${esc(u.name)}</div><div style="font-size:12px;color:var(--text3)">@${esc(u.handle)}</div></div>
+          ${
+						uid !== currentUser.id && g.createdBy === currentUser.id
+							? `<button class="btn-secondary" style="font-size:11px;padding:4px 8px;color:var(--danger)" onclick="V.removeMember('${groupId}','${uid}')">Retirer</button>`
+							: uid === currentUser.id
+								? '<span style="font-size:11px;color:var(--text3)">Vous</span>'
+								: ""
+					}
+        </div>`;
+			})
+			.join("");
+
+		const addList = nonMembers
+			.slice(0, 20)
+			.map(
+				(u) => `
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
+        ${avatarHTML(u)}
+        <div style="flex:1"><div style="font-size:13px;font-weight:500">${esc(u.name)}</div><div style="font-size:12px;color:var(--text3)">@${esc(u.handle)}</div></div>
+        <button class="btn-follow" style="font-size:11px;padding:4px 10px" onclick="V.addMember('${groupId}','${u.id}')">Inviter</button>
+      </div>`,
+			)
+			.join("");
+
+		this.showModal(`
+      <div class="modal-title">${esc(g.emoji || "")} ${esc(g.name)}</div>
+      <div class="tab-bar" style="margin-bottom:12px">
+        <div class="tab active" id="tab-members" onclick="V.switchGroupTab('members')">Membres (${members.length})</div>
+        <div class="tab" id="tab-invite" onclick="V.switchGroupTab('invite')">Inviter</div>
+      </div>
+      <div id="group-tab-members">${membersList || '<p style="color:var(--text3);font-size:13px">Aucun membre.</p>'}</div>
+      <div id="group-tab-invite" style="display:none">${addList || '<p style="color:var(--text3);font-size:13px">Tous les utilisateurs sont déjà membres.</p>'}</div>
+    `);
+	},
+
+	switchGroupTab(tab) {
+		document
+			.querySelectorAll("#modal-content .tab")
+			.forEach((t) => t.classList.remove("active"));
+		document.getElementById("tab-" + tab)?.classList.add("active");
+		document.getElementById("group-tab-members").style.display =
+			tab === "members" ? "block" : "none";
+		document.getElementById("group-tab-invite").style.display =
+			tab === "invite" ? "block" : "none";
+	},
+
+	async addMember(groupId, userId) {
+		await updateDoc(doc(db, "groups", groupId), {
+			members: arrayUnion(userId),
+		});
+		const btn = event?.target;
+		if (btn) {
+			btn.textContent = "Ajouté !";
+			btn.disabled = true;
+			btn.style.opacity = "0.5";
+		}
+	},
+
+	async removeMember(groupId, userId) {
+		if (!confirm("Retirer ce membre du groupe ?")) return;
+		await updateDoc(doc(db, "groups", groupId), {
+			members: arrayRemove(userId),
+		});
+		this.closeModal();
+		this.manageGroup(groupId);
 	},
 
 	showCreateGroupModal() {
@@ -1084,18 +1201,16 @@ const V = (window.V = {
       </div>
       <div class="form-group">
         <label class="form-label">Emoji</label>
-        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px">
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px" id="emoji-grid">
           ${emojis
 						.map(
-							(e) =>
+							(e, i) =>
 								`<button onclick="V.selectEmoji(this,'${e}')"
-              style="font-size:24px;background:var(--bg3);border:2px solid transparent;border-radius:8px;padding:6px;cursor:pointer">
-              ${e}
-            </button>`,
+              style="font-size:22px;background:var(--bg3);border:2px solid ${i === 0 ? "var(--accent)" : "transparent"};border-radius:8px;padding:6px;cursor:pointer;line-height:1">${e}</button>`,
 						)
 						.join("")}
         </div>
-        <input type="hidden" id="group-emoji" value="💬">
+        <input type="hidden" id="group-emoji" value="${emojis[0]}">
       </div>
       <div style="display:flex;gap:10px;margin-top:20px">
         <button class="btn-secondary" onclick="V.closeModal()">Annuler</button>
@@ -1105,7 +1220,7 @@ const V = (window.V = {
 
 	selectEmoji(btn, emoji) {
 		document
-			.querySelectorAll('#modal-content button[style*="font-size:24px"]')
+			.querySelectorAll("#emoji-grid button")
 			.forEach((b) => (b.style.borderColor = "transparent"));
 		btn.style.borderColor = "var(--accent)";
 		$("group-emoji").value = emoji;
@@ -1114,7 +1229,10 @@ const V = (window.V = {
 	async createGroup() {
 		const name = $("group-name")?.value?.trim();
 		const emoji = $("group-emoji")?.value || "💬";
-		if (!name) return;
+		if (!name) {
+			$("group-name")?.focus();
+			return;
+		}
 		await addDoc(collection(db, "groups"), {
 			name,
 			emoji,
