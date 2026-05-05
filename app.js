@@ -379,7 +379,6 @@ const V = (window.V = {
 	},
 
 	async logout() {
-		// Mettre hors ligne avant de déconnecter
 		if (presenceRef) set(presenceRef, { online: false, lastSeen: rts() });
 		listeners.forEach((u) => u());
 		listeners = [];
@@ -387,7 +386,96 @@ const V = (window.V = {
 			chatUnsub();
 			chatUnsub = null;
 		}
+		currentUser = null;
 		await signOut(auth);
+	},
+
+	// Menu compte (déconnexion + changer de compte)
+	showAccountMenu() {
+		this.showModal(`
+      <div class="modal-title" style="margin-bottom:16px">Mon compte</div>
+
+      <!-- Profil actuel -->
+      <div style="display:flex;align-items:center;gap:12px;padding:14px;background:var(--bg3);border-radius:var(--radius-sm);margin-bottom:16px">
+        ${avatarHTML(currentUser, "avatar-lg")}
+        <div>
+          <div style="font-weight:600;font-size:15px">${esc(currentUser.name)}</div>
+          <div style="font-size:13px;color:var(--text3)">@${esc(currentUser.handle)}</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:2px">${esc(currentUser.email)}</div>
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <button class="btn-secondary" style="width:100%;text-align:left;display:flex;align-items:center;gap:10px"
+          onclick="V.closeModal();V.go('profile')">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/>
+          </svg>
+          Voir mon profil
+        </button>
+        <button class="btn-secondary" style="width:100%;text-align:left;display:flex;align-items:center;gap:10px"
+          onclick="V.closeModal();V.go('settings')">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/>
+          </svg>
+          Param\u00e8tres
+        </button>
+
+        <hr style="border:none;border-top:1px solid var(--border);margin:4px 0">
+
+        <button class="btn-secondary" style="width:100%;text-align:left;display:flex;align-items:center;gap:10px"
+          onclick="V.switchAccount()">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
+            <circle cx="9" cy="7" r="4"/>
+            <path d="M23 21v-2a4 4 0 00-3-3.87"/>
+            <path d="M16 3.13a4 4 0 010 7.75"/>
+          </svg>
+          Changer de compte
+        </button>
+
+        <button onclick="V.closeModal();V.confirmLogout()"
+          style="width:100%;text-align:left;display:flex;align-items:center;gap:10px;background:rgba(242,107,107,0.08);border:1px solid rgba(242,107,107,0.2);color:#f26b6b;padding:10px 18px;border-radius:var(--radius-sm);font-family:var(--font);font-size:14px;font-weight:500;cursor:pointer">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
+            <polyline points="16 17 21 12 16 7"/>
+            <line x1="21" y1="12" x2="9" y2="12"/>
+          </svg>
+          Se d\u00e9connecter
+        </button>
+      </div>`);
+	},
+
+	confirmLogout() {
+		this.showModal(`
+      <div class="modal-title">Se d\u00e9connecter ?</div>
+      <p style="font-size:14px;color:var(--text2);margin-bottom:20px">
+        Vous serez redirig\u00e9 vers l'\u00e9cran de connexion.
+      </p>
+      <div class="btn-row">
+        <button class="btn-secondary" onclick="V.closeModal()">Annuler</button>
+        <button onclick="V.closeModal();V.logout()"
+          style="background:rgba(242,107,107,0.15);border:1px solid rgba(242,107,107,0.3);color:#f26b6b;padding:10px 18px;border-radius:var(--radius-sm);font-family:var(--font);font-size:14px;font-weight:500;cursor:pointer">
+          D\u00e9connecter
+        </button>
+      </div>`);
+	},
+
+	// Changer de compte : déconnecte et montre l'écran de connexion
+	async switchAccount() {
+		this.closeModal();
+		this.showModal(`
+      <div class="modal-title">Changer de compte</div>
+      <p style="font-size:14px;color:var(--text2);margin-bottom:20px">
+        Vous allez \u00eatre d\u00e9connect\u00e9 du compte <strong>${esc(currentUser.name)}</strong>.
+        Vous pourrez ensuite vous connecter avec un autre compte.
+      </p>
+      <div class="btn-row">
+        <button class="btn-secondary" onclick="V.closeModal()">Annuler</button>
+        <button class="btn-primary" onclick="V.closeModal();V.logout()">Changer de compte</button>
+      </div>`);
 	},
 
 	// ---- SIDEBAR ----
@@ -1841,34 +1929,35 @@ const V = (window.V = {
 		const rows = users
 			.map(
 				(u) => `
-      <tr>
+      <tr style="${u.banned ? "opacity:0.6" : ""}">
         <td>
           <div style="display:flex;align-items:center;gap:8px">
             ${avatarHTML(u)}
             <div>
               <div style="font-weight:500;font-size:13px">${esc(u.name)}</div>
               <div style="font-size:12px;color:var(--text3)">@${esc(u.handle || "")}</div>
+              ${u.banned && u.banReason ? `<div style="font-size:11px;color:#f26b6b;margin-top:2px">Banni : ${esc(u.banReason)}</div>` : ""}
             </div>
           </div>
         </td>
         <td>
-          <span class="badge badge-${u.role === "admin" ? "admin" : "user"}">
-            ${u.role === "admin" ? "Admin" : "Utilisateur"}
+          <span class="badge badge-${u.banned ? "banned" : u.role === "admin" ? "admin" : "user"}">
+            ${u.banned ? "&#128683; Banni" : u.role === "admin" ? "Admin" : "Utilisateur"}
           </span>
         </td>
         <td style="font-size:13px;color:var(--text3)">${esc(u.email || "")}</td>
         <td>
           ${
 						u.id !== currentUser.id
-							? `<div style="display:flex;gap:8px;align-items:center">
+							? `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
                 <button class="toggle ${u.role === "admin" ? "on" : ""}"
                   onclick="V.toggleAdminRole('${u.id}','${u.role}')"
-                  title="Rôle admin"></button>
-                <button class="toggle ${u.banned ? "on" : ""}"
-                  onclick="V.toggleBan('${u.id}',${!!u.banned})"
-                  style="${u.banned ? "background:#f26b6b" : ""}"
-                  title="Bannir"></button>
-                <span style="font-size:11px;color:#f26b6b">${u.banned ? "Banni" : ""}</span>
+                  title="${u.role === "admin" ? "Retirer admin" : "Donner admin"}"></button>
+                <button
+                  onclick="V.showBanModal('${u.id}','${esc(u.name)}',${!!u.banned})"
+                  style="padding:4px 10px;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;border:1px solid ${u.banned ? "rgba(93,216,158,0.3)" : "rgba(242,107,107,0.3)"};background:${u.banned ? "rgba(93,216,158,0.1)" : "rgba(242,107,107,0.1)"};color:${u.banned ? "#5dd89e" : "#f26b6b"}">
+                  ${u.banned ? "D\u00e9bannir" : "Bannir"}
+                </button>
                </div>`
 							: '<span style="font-size:12px;color:var(--text3)">Vous</span>'
 					}
@@ -1940,14 +2029,86 @@ const V = (window.V = {
 	},
 
 	async toggleAdminRole(uid, currentRole) {
-		await updateDoc(doc(db, "users", uid), {
-			role: currentRole === "admin" ? "user" : "admin",
-		});
+		const newRole = currentRole === "admin" ? "user" : "admin";
+		await updateDoc(doc(db, "users", uid), { role: newRole });
 		this.go("admin");
 	},
 
-	async toggleBan(uid, isBanned) {
-		await updateDoc(doc(db, "users", uid), { banned: !isBanned });
+	// Bannissement avec confirmation et raison
+	showBanModal(uid, name, isBanned) {
+		if (isBanned) {
+			// Déjà banni → modal pour débannir
+			this.showModal(`
+        <div class="modal-title">D\u00e9bannir cet utilisateur</div>
+        <div style="display:flex;align-items:center;gap:12px;padding:14px;background:var(--bg3);border-radius:var(--radius-sm);margin-bottom:16px">
+          <div style="width:40px;height:40px;border-radius:50%;background:#5dd89e;display:flex;align-items:center;justify-content:center;font-weight:600;color:#fff">${esc(name[0])}</div>
+          <div>
+            <div style="font-weight:500">${esc(name)}</div>
+            <div style="font-size:12px;color:#f26b6b">Compte actuellement banni</div>
+          </div>
+        </div>
+        <p style="font-size:14px;color:var(--text2);margin-bottom:20px">
+          En d\u00e9bannissant cet utilisateur, il pourra de nouveau se connecter et utiliser AEVOX.
+        </p>
+        <div class="btn-row">
+          <button class="btn-secondary" onclick="V.closeModal()">Annuler</button>
+          <button class="btn-primary" onclick="V.executeBan('${uid}', false, '')">
+            D\u00e9bannir l'utilisateur
+          </button>
+        </div>`);
+		} else {
+			// Pas banni → modal pour bannir avec raison
+			this.showModal(`
+        <div class="modal-title">Bannir cet utilisateur</div>
+        <div style="display:flex;align-items:center;gap:12px;padding:14px;background:var(--bg3);border-radius:var(--radius-sm);margin-bottom:16px">
+          <div style="width:40px;height:40px;border-radius:50%;background:#7c6af7;display:flex;align-items:center;justify-content:center;font-weight:600;color:#fff">${esc(name[0])}</div>
+          <div style="font-weight:500">${esc(name)}</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Raison du bannissement</label>
+          <select class="form-input" id="ban-reason">
+            <option value="spam">Spam ou pub non souhait\u00e9e</option>
+            <option value="harcelement">Harc\u00e8lement ou comportement abusif</option>
+            <option value="contenu">Contenu inappropri\u00e9</option>
+            <option value="faux">Faux profil ou usurpation</option>
+            <option value="autre">Autre raison</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">D\u00e9tails (optionnel)</label>
+          <textarea class="form-input form-textarea" id="ban-details"
+            placeholder="Pr\u00e9cisez la raison..." style="min-height:60px"></textarea>
+        </div>
+        <div style="background:rgba(242,107,107,0.08);border:1px solid rgba(242,107,107,0.2);border-radius:var(--radius-sm);padding:12px;margin-bottom:16px">
+          <div style="font-size:13px;color:#f26b6b;font-weight:500">&#9888;&#65039; Attention</div>
+          <div style="font-size:13px;color:var(--text2);margin-top:4px">
+            L'utilisateur sera imm\u00e9diatement d\u00e9connect\u00e9 et ne pourra plus acc\u00e9der \u00e0 AEVOX.
+          </div>
+        </div>
+        <div class="btn-row">
+          <button class="btn-secondary" onclick="V.closeModal()">Annuler</button>
+          <button onclick="V.executeBan('${uid}', true, document.getElementById('ban-reason').value)"
+            style="background:rgba(242,107,107,0.15);border:1px solid rgba(242,107,107,0.3);color:#f26b6b;padding:10px 18px;border-radius:var(--radius-sm);font-family:var(--font);font-size:14px;font-weight:500;cursor:pointer">
+            Confirmer le bannissement
+          </button>
+        </div>`);
+		}
+	},
+
+	async executeBan(uid, ban, reason) {
+		const updates = {
+			banned: ban,
+			banReason: ban ? reason : null,
+			bannedAt: ban ? serverTimestamp() : null,
+			bannedBy: ban ? currentUser.id : null,
+		};
+		await updateDoc(doc(db, "users", uid), updates);
+		this.closeModal();
+		// Notification dans la console admin
+		const msg = ban
+			? `Utilisateur banni (raison: ${reason})`
+			: "Utilisateur d\u00e9banni";
+		console.log(`[AEVOX Admin] ${msg}`);
 		this.go("admin");
 	},
 
