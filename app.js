@@ -986,54 +986,169 @@ const V = (window.V = {
         </svg>
       </button>`;
 
+		// Charger conversations directes ET groupes en parallèle
+		const loadAll = async () => {
+			const list = $("conv-list");
+			if (!list) return;
+
+			const items = [];
+
+			// 1. Conversations directes (Firestore)
+			try {
+				const convSnap = await getDocs(
+					query(
+						collection(db, "conversations"),
+						orderBy("lastAt", "desc"),
+						limit(100),
+					),
+				);
+				const convs = convSnap.docs
+					.map((d) => ({ id: d.id, ...d.data() }))
+					.filter((c) => (c.members || []).includes(currentUser.id));
+
+				for (const conv of convs) {
+					const otherId = conv.members.find((m) => m !== currentUser.id);
+					if (!otherId) continue;
+					let other = {
+						id: otherId,
+						name: "Utilisateur",
+						handle: "user",
+						avatarColor: "#888",
+					};
+					try {
+						const uSnap = await getDoc(doc(db, "users", otherId));
+						if (uSnap.exists()) other = { id: otherId, ...uSnap.data() };
+					} catch {}
+					if (other.banned) continue;
+					items.push({
+						type: "direct",
+						id: conv.id,
+						uid: otherId,
+						name: other.name,
+						handle: other.handle || "",
+						color: other.avatarColor,
+						avatar: other.avatar || null,
+						preview: (conv.lastMsg || "").substring(0, 60),
+						time: conv.lastAt,
+						unread: ((conv.unread || {})[currentUser.id] || 0) > 0,
+					});
+				}
+			} catch {}
+
+			// 2. Groupes dont on est membre
+			try {
+				const grpSnap = await getDocs(collection(db, "groups"));
+				const myGroups = grpSnap.docs
+					.map((d) => ({ id: d.id, ...d.data() }))
+					.filter((g) => (g.members || []).includes(currentUser.id));
+
+				for (const g of myGroups) {
+					// Priorité : lastMsg dans Firestore (mis à jour par sendGroupMessage)
+					let preview = "Aucun message";
+					let time = g.lastMsgAt || g.createdAt || null;
+
+					if (g.lastMsg) {
+						preview = g.lastMsg.substring(0, 60);
+					} else {
+						// Fallback : lire RTDB
+						try {
+							const msgsSnap = await rget(ref(rtdb, `group_msgs/${g.id}`));
+							if (msgsSnap.exists()) {
+								const msgs = Object.values(msgsSnap.val()).sort(
+									(a, b) => b.ts - a.ts,
+								);
+								if (msgs[0]) {
+									preview = msgs[0].c.substring(0, 60);
+									time = { toMillis: () => msgs[0].ts };
+								}
+							}
+						} catch {}
+					}
+					items.push({
+						type: "group",
+						id: g.id,
+						name: g.name,
+						emoji: g.emoji || String.fromCodePoint(0x1f4ac),
+						preview,
+						time,
+						unread: false,
+					});
+				}
+			} catch {}
+
+			if (!items.length) {
+				list.innerHTML =
+					'<div class="empty-state"><p>Aucune conversation.</p></div>';
+				return;
+			}
+
+			// Trier par date décroissante
+			items.sort((a, b) => {
+				const ta = a.time?.toMillis
+					? a.time.toMillis()
+					: a.time?.seconds
+						? a.time.seconds * 1000
+						: 0;
+				const tb = b.time?.toMillis
+					? b.time.toMillis()
+					: b.time?.seconds
+						? b.time.seconds * 1000
+						: 0;
+				return tb - ta;
+			});
+
+			list.innerHTML = items
+				.map((item) => {
+					if (item.type === "direct") {
+						const av = item.avatar
+							? `<div class="avatar" style="background:${item.color}"><img src="${item.avatar}" alt=""></div>`
+							: `<div class="avatar" style="background:${item.color}">${item.name[0]}</div>`;
+						return `
+            <div class="msg-item ${item.unread ? "unread" : ""}"
+              onclick="V.go('chat',{uid:'${item.uid}',cid:'${item.id}'})">
+              ${av}
+              <div class="msg-info">
+                <div class="msg-name">${esc(item.name)}</div>
+                <div class="msg-preview">${esc(item.preview)}</div>
+              </div>
+              <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+                <div style="font-size:12px;color:var(--text3)">${timeAgo(item.time)}</div>
+                ${item.unread ? '<div class="msg-dot"></div>' : ""}
+              </div>
+            </div>`;
+					} else {
+						return `
+            <div class="msg-item"
+              onclick="V.go('chat',{uid:'__group__',cid:'${item.id}',groupId:'${item.id}'})">
+              <div style="width:36px;height:36px;border-radius:12px;background:var(--accent-bg2);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">${item.emoji}</div>
+              <div class="msg-info">
+                <div class="msg-name" style="display:flex;align-items:center;gap:6px">
+                  ${esc(item.name)}
+                  <span style="font-size:10px;color:var(--accent2);background:var(--accent-bg);padding:1px 6px;border-radius:10px">Groupe</span>
+                </div>
+                <div class="msg-preview">${esc(item.preview)}</div>
+              </div>
+              <div style="font-size:12px;color:var(--text3)">${timeAgo(item.time)}</div>
+            </div>`;
+					}
+				})
+				.join("");
+		};
+
+		loadAll();
+
+		// Écouter les nouvelles conversations directes en temps réel
 		const q = query(
 			collection(db, "conversations"),
 			orderBy("lastAt", "desc"),
 			limit(100),
 		);
-		const unsub = onSnapshot(q, async (snap) => {
-			const list = $("conv-list");
-			if (!list) return;
-			const convs = snap.docs
-				.map((d) => ({ id: d.id, ...d.data() }))
-				.filter((c) => (c.members || []).includes(currentUser.id));
-			if (!convs.length) {
-				list.innerHTML =
-					'<div class="empty-state"><p>Aucune conversation.</p></div>';
-				return;
-			}
-			list.innerHTML = "";
-			for (const conv of convs) {
-				const otherId = conv.members.find((m) => m !== currentUser.id);
-				if (!otherId) continue;
-				const userSnap = await getDoc(doc(db, "users", otherId));
-				const other = userSnap.exists()
-					? { id: otherId, ...userSnap.data() }
-					: {
-							id: otherId,
-							name: "Utilisateur",
-							handle: "user",
-							avatarColor: "#888",
-						};
-				const hasUnread = (conv.unread || {})[currentUser.id] > 0;
-				const div = document.createElement("div");
-				div.innerHTML = `
-          <div class="msg-item ${hasUnread ? "unread" : ""}"
-            onclick="V.go('chat',{uid:'${otherId}',cid:'${conv.id}'})">
-            ${avatarHTML(other)}
-            <div class="msg-info">
-              <div class="msg-name">${esc(other.name)}</div>
-              <div class="msg-preview">${esc((conv.lastMsg || "").substring(0, 60))}</div>
-            </div>
-            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
-              <div style="font-size:12px;color:var(--text3)">${timeAgo(conv.lastAt)}</div>
-              ${hasUnread ? '<div class="msg-dot"></div>' : ""}
-            </div>
-          </div>`;
-				list.appendChild(div.firstChild);
-			}
-		});
+		const unsub = onSnapshot(q, () => loadAll());
 		listeners.push(unsub);
+
+		// Écouter les mises à jour des groupes (lastMsg)
+		const grpUnsub = onSnapshot(collection(db, "groups"), () => loadAll());
+		listeners.push(grpUnsub);
 	},
 
 	// ---- CHAT EN TEMPS RÉEL ----
@@ -1090,44 +1205,70 @@ const V = (window.V = {
           </div>
         </div>`;
 
-			// Écouter les messages du groupe (Realtime Database)
+			// Écouter les messages du groupe avec onValue (fiable, comme les messages directs)
 			const msgsRef = ref(rtdb, `group_msgs/${groupId}`);
 			chatUnsub = () => off(msgsRef);
-			// Charger les messages existants
-			onChildAdded(msgsRef, async (snap) => {
-				const msg = snap.val();
+
+			// Cache des infos utilisateurs pour éviter trop d'appels Firebase
+			const userCache = {
+				[currentUser.id]: {
+					name: currentUser.name,
+					color: currentUser.avatarColor,
+				},
+			};
+
+			const renderGroupMsg = async (key, msg, container) => {
+				if (!container || container.querySelector(`[data-key="${key}"]`))
+					return;
 				const isMe = msg.sid === currentUser.id;
-				const container = $("chat-messages");
-				if (!container) return;
-				// Vider l'état vide si c'est le premier message
-				const emptyState = container.querySelector(".empty-state");
-				if (emptyState) emptyState.remove();
-				// Récupérer le nom de l'expéditeur
-				let senderName = "Utilisateur";
-				let senderColor = "#7c6af7";
-				if (msg.sid === currentUser.id) {
-					senderName = currentUser.name;
-					senderColor = currentUser.avatarColor;
-				} else {
+				// Récupérer les infos expéditeur (avec cache)
+				if (!userCache[msg.sid]) {
 					try {
 						const uSnap = await getDoc(doc(db, "users", msg.sid));
 						if (uSnap.exists()) {
-							senderName = uSnap.data().name;
-							senderColor = uSnap.data().avatarColor;
+							userCache[msg.sid] = {
+								name: uSnap.data().name,
+								color: uSnap.data().avatarColor || "#7c6af7",
+							};
+						} else {
+							userCache[msg.sid] = { name: "Utilisateur", color: "#888" };
 						}
-					} catch {}
+					} catch {
+						userCache[msg.sid] = { name: "Utilisateur", color: "#888" };
+					}
 				}
+				const { name: senderName, color: senderColor } = userCache[msg.sid] || {
+					name: "Utilisateur",
+					color: "#888",
+				};
+				// Retirer l'état vide
+				const emptyState = container.querySelector(".empty-state");
+				if (emptyState) emptyState.remove();
 				const div = document.createElement("div");
+				div.setAttribute("data-key", key);
+				div.className = `chat-msg ${isMe ? "me" : ""}`;
 				div.innerHTML = `
-          <div class="chat-msg ${isMe ? "me" : ""}">
-            ${!isMe ? `<div class="avatar" style="background:${senderColor};width:28px;height:28px;font-size:11px;flex-shrink:0">${senderName[0]}</div>` : ""}
-            <div>
-              ${!isMe ? `<div style="font-size:11px;color:var(--text3);margin-bottom:3px">${esc(senderName)}</div>` : ""}
-              <div class="chat-bubble">${formatContent(msg.c)}</div>
-            </div>
+          ${!isMe ? `<div class="avatar" style="background:${senderColor};width:28px;height:28px;font-size:11px;flex-shrink:0">${senderName[0]}</div>` : ""}
+          <div>
+            ${!isMe ? `<div style="font-size:11px;color:var(--text3);margin-bottom:3px">${esc(senderName)}</div>` : ""}
+            <div class="chat-bubble">${formatContent(msg.c)}</div>
           </div>`;
-				container.appendChild(div.firstChild);
+				container.appendChild(div);
 				container.scrollTop = container.scrollHeight;
+			};
+
+			onValue(msgsRef, async (snap) => {
+				const container = $("chat-messages");
+				if (!container) return;
+				const data2 = snap.val();
+				if (!data2) return;
+				// Trier par timestamp et afficher les nouveaux uniquement
+				const msgs = Object.entries(data2).sort(
+					(a, b) => (a[1].ts || 0) - (b[1].ts || 0),
+				);
+				for (const [key, msg] of msgs) {
+					await renderGroupMsg(key, msg, $("chat-messages"));
+				}
 			});
 			return;
 		}
@@ -1282,11 +1423,19 @@ const V = (window.V = {
 		const text = input?.value?.trim();
 		if (!text) return;
 		input.value = "";
+		// Envoyer dans Realtime Database
 		await push(ref(rtdb, `group_msgs/${groupId}`), {
 			sid: currentUser.id,
 			c: text,
 			ts: Date.now(),
 		});
+		// Mettre à jour le groupe dans Firestore pour afficher dans la liste des messages
+		try {
+			await updateDoc(doc(db, "groups", groupId), {
+				lastMsg: text,
+				lastMsgAt: serverTimestamp(),
+			});
+		} catch {}
 	},
 
 	chatKeydown(e, uid, cid) {
