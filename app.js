@@ -3,225 +3,174 @@
 //  Firebase Firestore + Realtime Database
 // ================================================
 
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import {
-	getFirestore,
-	collection,
-	doc,
-	addDoc,
-	setDoc,
-	getDoc,
-	getDocs,
-	updateDoc,
-	deleteDoc,
-	query,
-	where,
-	orderBy,
-	limit,
-	onSnapshot,
-	serverTimestamp,
-	arrayUnion,
-	arrayRemove,
-	increment,
-} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
-import {
-	getAuth,
-	createUserWithEmailAndPassword,
-	signInWithEmailAndPassword,
-	signOut,
-	onAuthStateChanged,
-	GoogleAuthProvider,
-	signInWithCredential,
-} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import {
-	getDatabase,
-	ref,
-	set,
-	push,
-	onChildAdded,
-	onValue,
-	off,
-	serverTimestamp as rts,
-	get as rget,
-	onDisconnect,
-} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js'
+import { getFirestore, collection, doc, addDoc, setDoc, getDoc, getDocs,
+         updateDoc, deleteDoc, query, where, orderBy, limit, onSnapshot,
+         serverTimestamp, arrayUnion, arrayRemove, increment
+       } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js'
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
+         signOut, onAuthStateChanged, GoogleAuthProvider, signInWithCredential
+       } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js'
+import { getDatabase, ref, set, push, onChildAdded, onValue, off,
+         serverTimestamp as rts, get as rget, onDisconnect
+       } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js'
 
 // ================================================
 //  CONFIGURATION FIREBASE
 // ================================================
 const firebaseConfig = {
-	apiKey: "AIzaSyA_z5FQQbeb7y6Msv9nzo-VxLtmTrTnQ4c",
-	authDomain: "vox-app-b020e.firebaseapp.com",
-	databaseURL:
-		"https://vox-app-b020e-default-rtdb.europe-west1.firebasedatabase.app",
-	projectId: "vox-app-b020e",
-	storageBucket: "vox-app-b020e.firebasestorage.app",
-	messagingSenderId: "99369128217",
-	appId: "1:99369128217:web:0286bfdd90cc6c4709f588",
-};
+  apiKey:            "AIzaSyA_z5FQQbeb7y6Msv9nzo-VxLtmTrTnQ4c",
+  authDomain:        "vox-app-b020e.firebaseapp.com",
+  databaseURL:       "https://vox-app-b020e-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId:         "vox-app-b020e",
+  storageBucket:     "vox-app-b020e.firebasestorage.app",
+  messagingSenderId: "99369128217",
+  appId:             "1:99369128217:web:0286bfdd90cc6c4709f588"
+}
 
-const firebaseApp = initializeApp(firebaseConfig);
-const db = getFirestore(firebaseApp);
-const auth = getAuth(firebaseApp);
-const rtdb = getDatabase(firebaseApp);
+const firebaseApp = initializeApp(firebaseConfig)
+const db          = getFirestore(firebaseApp)
+const auth        = getAuth(firebaseApp)
+const rtdb        = getDatabase(firebaseApp)
 
 // ================================================
 //  ÉTAT GLOBAL
 // ================================================
-let currentUser = null; // données utilisateur connecté
-let listeners = []; // listeners Firestore à nettoyer
-let chatUnsub = null; // listener chat actif
-let presenceRef = null; // référence présence RTDB
-let typingTimeout = null; // timeout indicateur frappe
-let searchTab = "users";
+let currentUser      = null   // données utilisateur connecté
+let listeners        = []     // listeners Firestore à nettoyer
+let chatUnsub        = null   // listener chat actif
+let presenceRef      = null   // référence présence RTDB
+let typingTimeout    = null   // timeout indicateur frappe
+let searchTab        = 'users'
 
 // ================================================
 //  UTILITAIRES
 // ================================================
 
 /** Raccourci getElementById */
-const $ = (id) => document.getElementById(id);
+const $ = id => document.getElementById(id)
 
 /** Échappe le HTML pour éviter les injections */
-const esc = (s) =>
-	String(s || "")
-		.replace(/&/g, "&amp;")
-		.replace(/</g, "&lt;")
-		.replace(/>/g, "&gt;");
+const esc = s => String(s || '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
 
 /** Formate le contenu : @mentions et #hashtags en couleur */
-const formatContent = (text) =>
-	esc(text)
-		.replace(/@(\w+)/g, '<span class="mention">@$1</span>')
-		.replace(/#(\w+)/g, '<span class="hashtag">#$1</span>');
+const formatContent = text => esc(text)
+  .replace(/@(\w+)/g, '<span class="mention">@$1</span>')
+  .replace(/#(\w+)/g, '<span class="hashtag">#$1</span>')
 
 /** Calcule le temps relatif */
-const timeAgo = (ts) => {
-	if (!ts) return "";
-	const ms = ts?.toMillis ? ts.toMillis() : +ts;
-	const diff = Date.now() - ms;
-	if (diff < 60000) return "À l'instant";
-	if (diff < 3600000) return Math.floor(diff / 60000) + "m";
-	if (diff < 86400000) return Math.floor(diff / 3600000) + "h";
-	return Math.floor(diff / 86400000) + "j";
-};
+const timeAgo = ts => {
+  if (!ts) return ''
+  const ms = ts?.toMillis ? ts.toMillis() : +ts
+  const diff = Date.now() - ms
+  if (diff < 60000)   return "À l'instant"
+  if (diff < 3600000) return Math.floor(diff / 60000) + 'm'
+  if (diff < 86400000)return Math.floor(diff / 3600000) + 'h'
+  return Math.floor(diff / 86400000) + 'j'
+}
 
 /** Génère le HTML d'un avatar */
-const avatarHTML = (user, extraClass = "") =>
-	`<div class="avatar ${extraClass}" style="background:${user?.avatarColor || "#7c6af7"}">
-    ${
-			user?.avatar
-				? `<img src="${user.avatar}" alt="">`
-				: (user?.name || "?")[0].toUpperCase()
-		}
-  </div>`;
+const avatarHTML = (user, extraClass = '') =>
+  `<div class="avatar ${extraClass}" style="background:${user?.avatarColor || '#7c6af7'}">
+    ${user?.avatar
+      ? `<img src="${user.avatar}" alt="">`
+      : (user?.name || '?')[0].toUpperCase()
+    }
+  </div>`
 
 /** Couleurs aléatoires pour les nouveaux comptes */
-const COLORS = [
-	"#7c6af7",
-	"#4a9eff",
-	"#5dd89e",
-	"#f26b6b",
-	"#f5a623",
-	"#d46ef5",
-];
+const COLORS = ['#7c6af7','#4a9eff','#5dd89e','#f26b6b','#f5a623','#d46ef5']
 
 // ================================================
 //  PRÉSENCE EN LIGNE (Realtime Database)
 // ================================================
 
 function setOnline(uid) {
-	presenceRef = ref(rtdb, `presence/${uid}`);
-	set(presenceRef, { online: true, lastSeen: rts() });
-	onDisconnect(presenceRef).set({ online: false, lastSeen: rts() });
-	window.addEventListener("beforeunload", () => {
-		set(presenceRef, { online: false, lastSeen: rts() });
-	});
+  presenceRef = ref(rtdb, `presence/${uid}`)
+  set(presenceRef, { online: true, lastSeen: rts() })
+  onDisconnect(presenceRef).set({ online: false, lastSeen: rts() })
+  window.addEventListener('beforeunload', () => {
+    set(presenceRef, { online: false, lastSeen: rts() })
+  })
 }
 
 async function isOnline(uid) {
-	try {
-		const snap = await rget(ref(rtdb, `presence/${uid}`));
-		return snap.exists() && snap.val().online === true;
-	} catch {
-		return false;
-	}
+  try {
+    const snap = await rget(ref(rtdb, `presence/${uid}`))
+    return snap.exists() && snap.val().online === true
+  } catch { return false }
 }
 
 /** Écoute tous les utilisateurs en ligne pour le panneau droit */
 function listenOnlineUsers() {
-	const onlineRef = ref(rtdb, "presence");
-	onValue(onlineRef, (snap) => {
-		const panel = $("online-panel");
-		if (!panel) return;
-		const data = snap.val() || {};
-		const online = Object.entries(data).filter(
-			([uid, v]) => v.online && uid !== currentUser?.id,
-		);
-		if (!online.length) {
-			panel.innerHTML =
-				'<p style="font-size:13px;color:var(--text3)">Personne en ligne.</p>';
-			return;
-		}
-		panel.innerHTML = online
-			.slice(0, 5)
-			.map(
-				([uid, v]) =>
-					`<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer"
+  const onlineRef = ref(rtdb, 'presence')
+  onValue(onlineRef, snap => {
+    const panel = $('online-panel')
+    if (!panel) return
+    const data = snap.val() || {}
+    const online = Object.entries(data)
+      .filter(([uid, v]) => v.online && uid !== currentUser?.id)
+    if (!online.length) {
+      panel.innerHTML = '<p style="font-size:13px;color:var(--text3)">Personne en ligne.</p>'
+      return
+    }
+    panel.innerHTML = online.slice(0, 5).map(([uid, v]) =>
+      `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer"
             onclick="V.go('chat',{uid:'${uid}',cid:''})">
         <div style="position:relative">
           <div class="avatar" style="background:#7c6af7;width:30px;height:30px;font-size:12px">
-            ${v.name ? v.name[0].toUpperCase() : "?"}
+            ${v.name ? v.name[0].toUpperCase() : '?'}
           </div>
           <div class="online-dot" style="position:absolute;bottom:0;right:0;border:1.5px solid var(--bg2)"></div>
         </div>
-        <div style="font-size:13px;font-weight:500">${esc(v.name || "Utilisateur")}</div>
-      </div>`,
-			)
-			.join("");
-	});
+        <div style="font-size:13px;font-weight:500">${esc(v.name || 'Utilisateur')}</div>
+      </div>`
+    ).join('')
+  })
 }
 
 // ================================================
 //  AUTHENTIFICATION
 // ================================================
 
-function showAuthMessage(msg, type = "error") {
-	$("auth-msg").innerHTML =
-		`<div class="alert alert-${type === "ok" ? "success" : "error"}">${msg}</div>`;
+function showAuthMessage(msg, type = 'error') {
+  $('auth-msg').innerHTML =
+    `<div class="alert alert-${type === 'ok' ? 'success' : 'error'}">${msg}</div>`
 }
 
 /** Crée le document utilisateur dans Firestore */
 async function createUserDoc(uid, data) {
-	const handle =
-		(data.name || "user")
-			.toLowerCase()
-			.replace(/\s+/g, "")
-			.replace(/[^a-z0-9]/g, "") + Math.floor(Math.random() * 999);
+  const handle = (data.name || 'user')
+    .toLowerCase()
+    .replace(/\s+/g, '')
+    .replace(/[^a-z0-9]/g, '') + Math.floor(Math.random() * 999)
 
-	const userDoc = {
-		name: data.name || "",
-		handle,
-		email: data.email || "",
-		bio: "",
-		avatar: data.avatar || null,
-		avatarColor: COLORS[Math.floor(Math.random() * COLORS.length)],
-		role: "user",
-		verified: !!data.googleSignIn,
-		followers: [],
-		following: [],
-		banned: false,
-		createdAt: serverTimestamp(),
-	};
-	await setDoc(doc(db, "users", uid), userDoc);
+  const userDoc = {
+    name:       data.name || '',
+    handle,
+    email:      data.email || '',
+    bio:        '',
+    avatar:     data.avatar || null,
+    avatarColor: COLORS[Math.floor(Math.random() * COLORS.length)],
+    role:       'user',
+    verified:   !!data.googleSignIn,
+    followers:  [],
+    following:  [],
+    banned:     false,
+    createdAt:  serverTimestamp()
+  }
+  await setDoc(doc(db, 'users', uid), userDoc)
 
-	// Le premier compte inscrit devient automatiquement admin
-	const allUsers = await getDocs(collection(db, "users"));
-	if (allUsers.size === 1) {
-		await updateDoc(doc(db, "users", uid), { role: "admin" });
-		userDoc.role = "admin";
-	}
-	return userDoc;
+  // Le premier compte inscrit devient automatiquement admin
+  const allUsers = await getDocs(collection(db, 'users'))
+  if (allUsers.size === 1) {
+    await updateDoc(doc(db, 'users', uid), { role: 'admin' })
+    userDoc.role = 'admin'
+  }
+  return userDoc
 }
 
 // ================================================
@@ -229,175 +178,148 @@ async function createUserDoc(uid, data) {
 // ================================================
 
 function initGoogleSignIn() {
-	if (!window.google) {
-		setTimeout(initGoogleSignIn, 400);
-		return;
-	}
-	google.accounts.id.initialize({
-		client_id:
-			"867790391027-b5idb3338foevnoi9l9tqbg050f0udj5.apps.googleusercontent.com",
-		callback: handleGoogleCredential,
-		auto_select: false,
-		cancel_on_tap_outside: true,
-	});
-	const renderBtn = (id) => {
-		const el = $(id);
-		if (el)
-			google.accounts.id.renderButton(el, {
-				theme: "outline",
-				size: "large",
-				width: 324,
-				text: "continue_with",
-				shape: "rectangular",
-			});
-	};
-	renderBtn("g_login");
-	renderBtn("g_register");
+  if (!window.google) { setTimeout(initGoogleSignIn, 400); return }
+  google.accounts.id.initialize({
+    client_id: '867790391027-b5idb3338foevnoi9l9tqbg050f0udj5.apps.googleusercontent.com',
+    callback: handleGoogleCredential,
+    auto_select: false,
+    cancel_on_tap_outside: true
+  })
+  const renderBtn = id => {
+    const el = $(id)
+    if (el) google.accounts.id.renderButton(el, {
+      theme: 'outline', size: 'large', width: 324,
+      text: 'continue_with', shape: 'rectangular'
+    })
+  }
+  renderBtn('g_login')
+  renderBtn('g_register')
 }
 
 async function handleGoogleCredential(response) {
-	try {
-		const payload = JSON.parse(atob(response.credential.split(".")[1]));
-		const credential = GoogleAuthProvider.credential(response.credential);
-		const result = await signInWithCredential(auth, credential);
-		const existing = await getDoc(doc(db, "users", result.user.uid));
-		if (!existing.exists()) {
-			await createUserDoc(result.user.uid, {
-				name: payload.name,
-				email: payload.email,
-				avatar: payload.picture,
-				googleSignIn: true,
-			});
-		}
-	} catch (e) {
-		showAuthMessage("Erreur Google : " + e.message);
-	}
+  try {
+    const payload  = JSON.parse(atob(response.credential.split('.')[1]))
+    const credential = GoogleAuthProvider.credential(response.credential)
+    const result   = await signInWithCredential(auth, credential)
+    const existing = await getDoc(doc(db, 'users', result.user.uid))
+    if (!existing.exists()) {
+      await createUserDoc(result.user.uid, {
+        name:       payload.name,
+        email:      payload.email,
+        avatar:     payload.picture,
+        googleSignIn: true
+      })
+    }
+  } catch (e) {
+    showAuthMessage('Erreur Google : ' + e.message)
+  }
 }
 
 // ================================================
 //  ÉTAT D'AUTHENTIFICATION (observer principal)
 // ================================================
 
-onAuthStateChanged(auth, async (firebaseUser) => {
-	$("loading-screen").style.display = "none";
-	if (firebaseUser) {
-		const snap = await getDoc(doc(db, "users", firebaseUser.uid));
-		if (!snap.exists()) {
-			$("auth-screen").style.display = "flex";
-			$("app").style.display = "none";
-			initGoogleSignIn();
-			return;
-		}
-		const data = snap.data();
-		if (data.banned) {
-			await signOut(auth);
-			showAuthMessage("Ce compte a été suspendu.");
-			return;
-		}
-		currentUser = { id: firebaseUser.uid, ...data };
-		setOnline(firebaseUser.uid);
-		$("auth-screen").style.display = "none";
-		$("app").style.display = "block";
-		V.updateSidebar();
-		V.showMobileNav();
-		V.go("home");
-		V.loadRightPanel();
-		listenOnlineUsers();
-	} else {
-		currentUser = null;
-		$("auth-screen").style.display = "flex";
-		$("app").style.display = "none";
-		$("loading-screen").style.display = "none";
-		initGoogleSignIn();
-	}
-});
+onAuthStateChanged(auth, async firebaseUser => {
+  $('loading-screen').style.display = 'none'
+  if (firebaseUser) {
+    const snap = await getDoc(doc(db, 'users', firebaseUser.uid))
+    if (!snap.exists()) {
+      $('auth-screen').style.display = 'flex'
+      $('app').style.display = 'none'
+      initGoogleSignIn()
+      return
+    }
+    const data = snap.data()
+    if (data.banned) {
+      await signOut(auth)
+      showAuthMessage('Ce compte a été suspendu.')
+      return
+    }
+    currentUser = { id: firebaseUser.uid, ...data }
+    setOnline(firebaseUser.uid)
+    $('auth-screen').style.display = 'none'
+    $('app').style.display = 'block'
+    V.updateSidebar()
+    V.showMobileNav()
+    V.go('home')
+    V.loadRightPanel()
+    listenOnlineUsers()
+  } else {
+    currentUser = null
+    $('auth-screen').style.display = 'flex'
+    $('app').style.display = 'none'
+    $('loading-screen').style.display = 'none'
+    initGoogleSignIn()
+  }
+})
 
 // ================================================
 //  OBJET PRINCIPAL V (interface globale)
 // ================================================
 
-const V = (window.V = {
-	// ---- AUTH ----
+const V = window.V = {
 
-	switchTab(tab) {
-		document.querySelectorAll(".auth-tab").forEach((el, i) => {
-			el.classList.toggle(
-				"active",
-				(i === 0 && tab === "login") || (i === 1 && tab === "register"),
-			);
-		});
-		$("login-form").style.display = tab === "login" ? "flex" : "none";
-		$("register-form").style.display = tab === "register" ? "flex" : "none";
-		$("auth-msg").innerHTML = "";
-	},
+  // ---- AUTH ----
 
-	async login() {
-		const email = $("l-email").value.trim();
-		const pass = $("l-pass").value;
-		if (!email || !pass) {
-			showAuthMessage("Remplissez tous les champs.");
-			return;
-		}
-		try {
-			await signInWithEmailAndPassword(auth, email, pass);
-		} catch (err) {
-			const messages = {
-				"auth/invalid-credential": "Email ou mot de passe incorrect.",
-				"auth/user-not-found": "Compte introuvable.",
-				"auth/wrong-password": "Mot de passe incorrect.",
-			};
-			showAuthMessage(messages[err.code] || err.message);
-		}
-	},
+  switchTab(tab) {
+    document.querySelectorAll('.auth-tab').forEach((el, i) => {
+      el.classList.toggle('active', (i === 0 && tab === 'login') || (i === 1 && tab === 'register'))
+    })
+    $('login-form').style.display    = tab === 'login'    ? 'flex' : 'none'
+    $('register-form').style.display = tab === 'register' ? 'flex' : 'none'
+    $('auth-msg').innerHTML = ''
+  },
 
-	async register() {
-		const name = $("r-name").value.trim();
-		const email = $("r-email").value.trim();
-		const pass = $("r-pass").value;
-		const confirm = $("r-conf").value;
-		if (!name || !email || !pass) {
-			showAuthMessage("Remplissez tous les champs.");
-			return;
-		}
-		if (pass.length < 6) {
-			showAuthMessage("Mot de passe trop court (6 min).");
-			return;
-		}
-		if (pass !== confirm) {
-			showAuthMessage("Les mots de passe ne correspondent pas.");
-			return;
-		}
-		try {
-			const result = await createUserWithEmailAndPassword(auth, email, pass);
-			await createUserDoc(result.user.uid, { name, email });
-		} catch (err) {
-			const messages = {
-				"auth/email-already-in-use": "Cet email est déjà utilisé.",
-			};
-			showAuthMessage(messages[err.code] || err.message);
-		}
-	},
+  async login() {
+    const email = $('l-email').value.trim()
+    const pass  = $('l-pass').value
+    if (!email || !pass) { showAuthMessage('Remplissez tous les champs.'); return }
+    try {
+      await signInWithEmailAndPassword(auth, email, pass)
+    } catch (err) {
+      const messages = {
+        'auth/invalid-credential': 'Email ou mot de passe incorrect.',
+        'auth/user-not-found':     'Compte introuvable.',
+        'auth/wrong-password':     'Mot de passe incorrect.'
+      }
+      showAuthMessage(messages[err.code] || err.message)
+    }
+  },
 
-	async logout() {
-		if (presenceRef) set(presenceRef, { online: false, lastSeen: rts() });
-		listeners.forEach((u) => u());
-		listeners = [];
-		if (chatUnsub) {
-			chatUnsub();
-			chatUnsub = null;
-		}
-		currentUser = null;
-		await signOut(auth);
-	},
+  async register() {
+    const name    = $('r-name').value.trim()
+    const email   = $('r-email').value.trim()
+    const pass    = $('r-pass').value
+    const confirm = $('r-conf').value
+    if (!name || !email || !pass) { showAuthMessage('Remplissez tous les champs.'); return }
+    if (pass.length < 6)          { showAuthMessage('Mot de passe trop court (6 min).'); return }
+    if (pass !== confirm)          { showAuthMessage('Les mots de passe ne correspondent pas.'); return }
+    try {
+      const result = await createUserWithEmailAndPassword(auth, email, pass)
+      await createUserDoc(result.user.uid, { name, email })
+    } catch (err) {
+      const messages = { 'auth/email-already-in-use': 'Cet email est déjà utilisé.' }
+      showAuthMessage(messages[err.code] || err.message)
+    }
+  },
 
-	// Menu compte (déconnexion + changer de compte)
-	showAccountMenu() {
-		this.showModal(`
+  async logout() {
+    if (presenceRef) set(presenceRef, { online: false, lastSeen: rts() })
+    listeners.forEach(u => u())
+    listeners = []
+    if (chatUnsub) { chatUnsub(); chatUnsub = null }
+    currentUser = null
+    await signOut(auth)
+  },
+
+  // Menu compte (déconnexion + changer de compte)
+  showAccountMenu() {
+    this.showModal(`
       <div class="modal-title" style="margin-bottom:16px">Mon compte</div>
 
       <!-- Profil actuel -->
       <div style="display:flex;align-items:center;gap:12px;padding:14px;background:var(--bg3);border-radius:var(--radius-sm);margin-bottom:16px">
-        ${avatarHTML(currentUser, "avatar-lg")}
+        ${avatarHTML(currentUser, 'avatar-lg')}
         <div>
           <div style="font-weight:600;font-size:15px">${esc(currentUser.name)}</div>
           <div style="font-size:13px;color:var(--text3)">@${esc(currentUser.handle)}</div>
@@ -445,11 +367,11 @@ const V = (window.V = {
           </svg>
           Se d\u00e9connecter
         </button>
-      </div>`);
-	},
+      </div>`)
+  },
 
-	confirmLogout() {
-		this.showModal(`
+  confirmLogout() {
+    this.showModal(`
       <div class="modal-title">Se d\u00e9connecter ?</div>
       <p style="font-size:14px;color:var(--text2);margin-bottom:20px">
         Vous serez redirig\u00e9 vers l'\u00e9cran de connexion.
@@ -460,13 +382,13 @@ const V = (window.V = {
           style="background:rgba(242,107,107,0.15);border:1px solid rgba(242,107,107,0.3);color:#f26b6b;padding:10px 18px;border-radius:var(--radius-sm);font-family:var(--font);font-size:14px;font-weight:500;cursor:pointer">
           D\u00e9connecter
         </button>
-      </div>`);
-	},
+      </div>`)
+  },
 
-	// Changer de compte : déconnecte et montre l'écran de connexion
-	async switchAccount() {
-		this.closeModal();
-		this.showModal(`
+  // Changer de compte : déconnecte et montre l'écran de connexion
+  async switchAccount() {
+    this.closeModal()
+    this.showModal(`
       <div class="modal-title">Changer de compte</div>
       <p style="font-size:14px;color:var(--text2);margin-bottom:20px">
         Vous allez \u00eatre d\u00e9connect\u00e9 du compte <strong>${esc(currentUser.name)}</strong>.
@@ -475,158 +397,114 @@ const V = (window.V = {
       <div class="btn-row">
         <button class="btn-secondary" onclick="V.closeModal()">Annuler</button>
         <button class="btn-primary" onclick="V.closeModal();V.logout()">Changer de compte</button>
-      </div>`);
-	},
+      </div>`)
+  },
 
-	// ---- SIDEBAR ----
+  // ---- SIDEBAR ----
 
-	updateSidebar() {
-		if (!currentUser) return;
-		$("sb-name").textContent = currentUser.name;
-		$("sb-handle").textContent = "@" + currentUser.handle;
-		const avEl = $("sb-av");
-		avEl.style.background = currentUser.avatarColor || "#7c6af7";
-		avEl.innerHTML = currentUser.avatar
-			? `<img src="${currentUser.avatar}" alt="">`
-			: currentUser.name[0].toUpperCase();
-		// Sidebar admin
-		$("nav-admin").style.display =
-			currentUser.role === "admin" ? "flex" : "none";
-		// Menu mobile admin
-		const mobileAdmin = $("mobile-admin-item");
-		if (mobileAdmin)
-			mobileAdmin.style.display =
-				currentUser.role === "admin" ? "flex" : "none";
-	},
+  updateSidebar() {
+    if (!currentUser) return
+    $('sb-name').textContent   = currentUser.name
+    $('sb-handle').textContent = '@' + currentUser.handle
+    const avEl = $('sb-av')
+    avEl.style.background = currentUser.avatarColor || '#7c6af7'
+    avEl.innerHTML = currentUser.avatar
+      ? `<img src="${currentUser.avatar}" alt="">`
+      : currentUser.name[0].toUpperCase()
+    // Sidebar admin
+    $('nav-admin').style.display = currentUser.role === 'admin' ? 'flex' : 'none'
+    // Menu mobile admin
+    const mobileAdmin = $('mobile-admin-item')
+    if (mobileAdmin) mobileAdmin.style.display = currentUser.role === 'admin' ? 'flex' : 'none'
+  },
 
-	// ---- NAV MOBILE ----
+  // ---- NAV MOBILE ----
 
-	setMobileNav(page) {
-		document
-			.querySelectorAll(".mobile-nav-item")
-			.forEach((el) => el.classList.remove("active"));
-		const active = $("mnav-" + page);
-		if (active) active.classList.add("active");
-		// Pages dans le menu "Plus" → activer le bouton Plus
-		const morePages = [
-			"profile",
-			"groups",
-			"notifications",
-			"settings",
-			"admin",
-		];
-		if (morePages.includes(page)) {
-			const moreBtn = $("mnav-more");
-			if (moreBtn) moreBtn.classList.add("active");
-		}
-	},
+  setMobileNav(page) {
+    document.querySelectorAll('.mobile-nav-item').forEach(el => el.classList.remove('active'))
+    const active = $('mnav-' + page)
+    if (active) active.classList.add('active')
+    // Pages dans le menu "Plus" → activer le bouton Plus
+    const morePages = ['profile','groups','notifications','settings','admin']
+    if (morePages.includes(page)) {
+      const moreBtn = $('mnav-more')
+      if (moreBtn) moreBtn.classList.add('active')
+    }
+  },
 
-	showMobileNav() {
-		const nav = $("mobile-nav");
-		if (nav && window.innerWidth <= 480) nav.style.display = "flex";
-		// Afficher l'onglet admin si admin
-		const adminItem = $("mobile-admin-item");
-		if (adminItem)
-			adminItem.style.display = currentUser?.role === "admin" ? "flex" : "none";
-	},
+  showMobileNav() {
+    const nav = $('mobile-nav')
+    if (nav && window.innerWidth <= 480) nav.style.display = 'flex'
+    // Afficher l'onglet admin si admin
+    const adminItem = $('mobile-admin-item')
+    if (adminItem) adminItem.style.display = currentUser?.role === 'admin' ? 'flex' : 'none'
+  },
 
-	toggleMobileMenu() {
-		const menu = $("mobile-menu");
-		const overlay = $("mobile-menu-overlay");
-		const isOpen = menu && menu.style.display !== "none";
-		if (isOpen) {
-			this.closeMobileMenu();
-		} else {
-			if (menu) menu.style.display = "block";
-			if (overlay) overlay.style.display = "block";
-			const moreBtn = $("mnav-more");
-			if (moreBtn) moreBtn.classList.add("active");
-		}
-	},
+  toggleMobileMenu() {
+    const menu    = $('mobile-menu')
+    const overlay = $('mobile-menu-overlay')
+    const isOpen  = menu && menu.style.display !== 'none'
+    if (isOpen) {
+      this.closeMobileMenu()
+    } else {
+      if (menu)    menu.style.display    = 'block'
+      if (overlay) overlay.style.display = 'block'
+      const moreBtn = $('mnav-more')
+      if (moreBtn) moreBtn.classList.add('active')
+    }
+  },
 
-	closeMobileMenu() {
-		const menu = $("mobile-menu");
-		const overlay = $("mobile-menu-overlay");
-		if (menu) menu.style.display = "none";
-		if (overlay) overlay.style.display = "none";
-	},
+  closeMobileMenu() {
+    const menu    = $('mobile-menu')
+    const overlay = $('mobile-menu-overlay')
+    if (menu)    menu.style.display    = 'none'
+    if (overlay) overlay.style.display = 'none'
+  },
 
-	// ---- NAVIGATION ----
+  // ---- NAVIGATION ----
 
-	go(page, data = null) {
-		// Nettoyer les anciens listeners
-		listeners.forEach((u) => u());
-		listeners = [];
-		if (chatUnsub) {
-			chatUnsub();
-			chatUnsub = null;
-		}
+  go(page, data = null) {
+    // Nettoyer les anciens listeners
+    listeners.forEach(u => u())
+    listeners = []
+    if (chatUnsub) { chatUnsub(); chatUnsub = null }
 
-		// Mettre à jour la navigation active (sidebar)
-		document
-			.querySelectorAll(".nav-item")
-			.forEach((n) => n.classList.remove("active"));
-		const navEl = $("nav-" + page);
-		if (navEl) navEl.classList.add("active");
+    // Mettre à jour la navigation active (sidebar)
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'))
+    const navEl = $('nav-' + page)
+    if (navEl) navEl.classList.add('active')
 
-		// Mettre à jour la navigation mobile
-		this.setMobileNav(page);
-		this.closeMobileMenu();
+    // Mettre à jour la navigation mobile
+    this.setMobileNav(page)
+    this.closeMobileMenu()
 
-		// Afficher/cacher le panneau droit
-		const rightPanel = $("right-panel");
-		if (rightPanel) {
-			rightPanel.style.display = [
-				"home",
-				"public",
-				"profile",
-				"search",
-			].includes(page)
-				? "block"
-				: "none";
-		}
+    // Afficher/cacher le panneau droit
+    const rightPanel = $('right-panel')
+    if (rightPanel) {
+      rightPanel.style.display =
+        ['home','public','profile','search'].includes(page) ? 'block' : 'none'
+    }
 
-		const content = $("page-content");
-		switch (page) {
-			case "home":
-				this.renderHome(content);
-				break;
-			case "public":
-				this.renderPublic(content);
-				break;
-			case "messages":
-				this.renderMessages(content);
-				break;
-			case "chat":
-				this.renderChat(content, data);
-				break;
-			case "groups":
-				this.renderGroups(content);
-				break;
-			case "search":
-				this.renderSearch(content);
-				break;
-			case "notifications":
-				this.renderNotifications(content);
-				break;
-			case "profile":
-				this.renderProfile(content, data || currentUser.id);
-				break;
-			case "settings":
-				this.renderSettings(content);
-				break;
-			case "admin":
-				this.renderAdmin(content);
-				break;
-			default:
-				this.renderHome(content);
-		}
-	},
+    const content = $('page-content')
+    switch (page) {
+      case 'home':          this.renderHome(content); break
+      case 'public':        this.renderPublic(content); break
+      case 'messages':      this.renderMessages(content); break
+      case 'chat':          this.renderChat(content, data); break
+      case 'groups':        this.renderGroups(content); break
+      case 'search':        this.renderSearch(content); break
+      case 'notifications': this.renderNotifications(content); break
+      case 'profile':       this.renderProfile(content, data || currentUser.id); break
+      case 'settings':      this.renderSettings(content); break
+      case 'admin':         this.renderAdmin(content); break
+      default:              this.renderHome(content)
+    }
+  },
 
-	// ---- ACCUEIL ----
+  // ---- ACCUEIL ----
 
-	renderHome(el) {
-		el.innerHTML = `
+  renderHome(el) {
+    el.innerHTML = `
       <div class="main-inner">
         <div class="page-header">
           <div class="page-title">Accueil</div>
@@ -636,81 +514,56 @@ const V = (window.V = {
         <div id="feed-container">
           <div class="loading-screen" style="height:200px"><div class="spinner"></div></div>
         </div>
-      </div>`;
+      </div>`
 
-		// Charger les annonces
-		getDocs(
-			query(
-				collection(db, "announcements"),
-				orderBy("createdAt", "desc"),
-				limit(3),
-			),
-		)
-			.then((snap) => {
-				const banner = $("announcements-banner");
-				if (!banner || snap.empty) return;
-				const colors = {
-					info: "#4a9eff",
-					success: "#5dd89e",
-					warn: "#f5a623",
-					danger: "#f26b6b",
-				};
-				const icons = { info: "ℹ️", success: "✅", warn: "⚠️", danger: "🚫" };
-				banner.innerHTML = snap.docs
-					.map((d) => {
-						const a = d.data();
-						const c = colors[a.type] || "#4a9eff";
-						return `
+    // Charger les annonces
+    getDocs(query(collection(db, 'announcements'), orderBy('createdAt', 'desc'), limit(3))).then(snap => {
+      const banner = $('announcements-banner')
+      if (!banner || snap.empty) return
+      const colors = { info: '#4a9eff', success: '#5dd89e', warn: '#f5a623', danger: '#f26b6b' }
+      const icons  = { info: 'ℹ️', success: '✅', warn: '⚠️', danger: '🚫' }
+      banner.innerHTML = snap.docs.map(d => {
+        const a = d.data()
+        const c = colors[a.type] || '#4a9eff'
+        return `
           <div style="background:${c}11;border:1px solid ${c}44;border-radius:var(--radius-sm);padding:12px 16px;margin-top:12px;display:flex;gap:10px;align-items:flex-start">
-            <div style="font-size:18px">${icons[a.type] || "📢"}</div>
+            <div style="font-size:18px">${icons[a.type]||'📢'}</div>
             <div style="flex:1">
               <div style="font-weight:600;font-size:14px;color:${c}">${esc(a.title)}</div>
               <div style="font-size:13px;color:var(--text2);margin-top:4px">${esc(a.body)}</div>
               <div style="font-size:11px;color:var(--text3);margin-top:4px">Par l'équipe AEVOX &bull; ${timeAgo(a.createdAt)}</div>
             </div>
-          </div>`;
-					})
-					.join("");
-			})
-			.catch(() => {});
+          </div>`
+      }).join('')
+    }).catch(() => {})
 
-		const q = query(
-			collection(db, "posts"),
-			orderBy("createdAt", "desc"),
-			limit(40),
-		);
-		const unsub = onSnapshot(q, async (snap) => {
-			const feed = $("feed-container");
-			if (!feed) return;
-			const posts = snap.docs
-				.map((d) => ({ id: d.id, ...d.data() }))
-				.filter(
-					(p) =>
-						p.type === "public" ||
-						p.authorId === currentUser.id ||
-						(p.type === "followers" &&
-							(currentUser.following || []).includes(p.authorId)),
-				);
-			if (!posts.length) {
-				feed.innerHTML =
-					'<div class="empty-state"><p>Aucune publication. Soyez le premier !</p></div>';
-				return;
-			}
-			feed.innerHTML =
-				'<div class="loading-screen" style="height:100px"><div class="spinner"></div></div>';
-			const htmlParts = await Promise.all(posts.map((p) => this.postHTML(p)));
-			if (!$("feed-container")) return;
-			feed.innerHTML =
-				htmlParts.filter(Boolean).join("") ||
-				'<div class="empty-state"><p>Aucune publication.</p></div>';
-		});
-		listeners.push(unsub);
-	},
+    const q = query(collection(db, 'posts'), orderBy('createdAt', 'desc'), limit(40))
+    const unsub = onSnapshot(q, async snap => {
+      const feed = $('feed-container')
+      if (!feed) return
+      const posts = snap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter(p =>
+          p.type === 'public' ||
+          p.authorId === currentUser.id ||
+          (p.type === 'followers' && (currentUser.following || []).includes(p.authorId))
+        )
+      if (!posts.length) {
+        feed.innerHTML = '<div class="empty-state"><p>Aucune publication. Soyez le premier !</p></div>'
+        return
+      }
+      feed.innerHTML = '<div class="loading-screen" style="height:100px"><div class="spinner"></div></div>'
+      const htmlParts = await Promise.all(posts.map(p => this.postHTML(p)))
+      if (!$('feed-container')) return
+      feed.innerHTML = htmlParts.filter(Boolean).join('') || '<div class="empty-state"><p>Aucune publication.</p></div>'
+    })
+    listeners.push(unsub)
+  },
 
-	// ---- PUBLIC ----
+  // ---- PUBLIC ----
 
-	renderPublic(el) {
-		el.innerHTML = `
+  renderPublic(el) {
+    el.innerHTML = `
       <div class="main-inner">
         <div class="page-header">
           <div class="page-title">Public</div>
@@ -720,39 +573,33 @@ const V = (window.V = {
         <div id="feed-container">
           <div class="loading-screen" style="height:200px"><div class="spinner"></div></div>
         </div>
-      </div>`;
+      </div>`
 
-		// Pas de filtre where() pour éviter les index Firestore
-		// On récupère tout et on filtre côté client
-		const q = query(
-			collection(db, "posts"),
-			orderBy("createdAt", "desc"),
-			limit(100),
-		);
-		const unsub = onSnapshot(q, async (snap) => {
-			const feed = $("feed-container");
-			if (!feed) return;
-			const posts = snap.docs
-				.map((d) => ({ id: d.id, ...d.data() }))
-				.filter((p) => p.type === "public");
-			if (!posts.length) {
-				feed.innerHTML =
-					'<div class="empty-state"><p>Aucune publication publique.</p></div>';
-				return;
-			}
-			feed.innerHTML =
-				'<div class="loading-screen" style="height:100px"><div class="spinner"></div></div>';
-			const htmlParts = await Promise.all(posts.map((p) => this.postHTML(p)));
-			if (!$("feed-container")) return;
-			feed.innerHTML = htmlParts.filter(Boolean).join("");
-		});
-		listeners.push(unsub);
-	},
+    // Pas de filtre where() pour éviter les index Firestore
+    // On récupère tout et on filtre côté client
+    const q = query(collection(db, 'posts'), orderBy('createdAt', 'desc'), limit(100))
+    const unsub = onSnapshot(q, async snap => {
+      const feed = $('feed-container')
+      if (!feed) return
+      const posts = snap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter(p => p.type === 'public')
+      if (!posts.length) {
+        feed.innerHTML = '<div class="empty-state"><p>Aucune publication publique.</p></div>'
+        return
+      }
+      feed.innerHTML = '<div class="loading-screen" style="height:100px"><div class="spinner"></div></div>'
+      const htmlParts = await Promise.all(posts.map(p => this.postHTML(p)))
+      if (!$('feed-container')) return
+      feed.innerHTML = htmlParts.filter(Boolean).join('')
+    })
+    listeners.push(unsub)
+  },
 
-	// ---- COMPOSEUR DE POST ----
+  // ---- COMPOSEUR DE POST ----
 
-	composeHTML() {
-		return `
+  composeHTML() {
+    return `
       <div class="compose-box" style="margin-top:16px">
         ${avatarHTML(currentUser)}
         <div class="compose-inner">
@@ -768,103 +615,83 @@ const V = (window.V = {
             </div>
           </div>
         </div>
-      </div>`;
-	},
+      </div>`
+  },
 
-	updateCharCount(textarea) {
-		const left = 280 - textarea.value.length;
-		const el = $("char-count");
-		if (!el) return;
-		el.textContent = left;
-		el.style.color = left < 20 ? (left < 0 ? "#f26b6b" : "#f5a623") : "";
-	},
+  updateCharCount(textarea) {
+    const left = 280 - textarea.value.length
+    const el = $('char-count')
+    if (!el) return
+    el.textContent = left
+    el.style.color = left < 20 ? (left < 0 ? '#f26b6b' : '#f5a623') : ''
+  },
 
-	async submitPost() {
-		const ta = $("compose-text");
-		if (!ta) return;
-		const text = ta.value.trim();
-		if (!text || text.length > 280) {
-			if (!text) {
-				ta.focus();
-				return;
-			}
-			return;
-		}
-		const type = $("compose-type")?.value || "public";
-		const btn = document.querySelector(".compose-box .btn-primary");
-		if (btn) {
-			btn.textContent = "...";
-			btn.disabled = true;
-		}
-		try {
-			await addDoc(collection(db, "posts"), {
-				authorId: currentUser.id,
-				content: text,
-				type,
-				likes: [],
-				commentCount: 0,
-				createdAt: serverTimestamp(),
-			});
-			ta.value = "";
-			if ($("char-count")) $("char-count").textContent = "280";
-		} catch (e) {
-			console.error("Erreur publication:", e);
-			alert("Erreur lors de la publication. Vérifiez votre connexion.");
-		}
-		if (btn) {
-			btn.textContent = "Publier";
-			btn.disabled = false;
-		}
-	},
+  async submitPost() {
+    const ta = $('compose-text')
+    if (!ta) return
+    const text = ta.value.trim()
+    if (!text || text.length > 280) {
+      if (!text) { ta.focus(); return }
+      return
+    }
+    const type = $('compose-type')?.value || 'public'
+    const btn = document.querySelector('.compose-box .btn-primary')
+    if (btn) { btn.textContent = '...'; btn.disabled = true }
+    try {
+      await addDoc(collection(db, 'posts'), {
+        authorId: currentUser.id,
+        content:  text,
+        type,
+        likes:        [],
+        commentCount: 0,
+        createdAt: serverTimestamp()
+      })
+      ta.value = ''
+      if ($('char-count')) $('char-count').textContent = '280'
+    } catch(e) {
+      console.error('Erreur publication:', e)
+      alert('Erreur lors de la publication. Vérifiez votre connexion.')
+    }
+    if (btn) { btn.textContent = 'Publier'; btn.disabled = false }
+  },
 
-	// ---- HTML D'UN POST ----
+  // ---- HTML D'UN POST ----
 
-	async postHTML(post) {
-		if (!post || !post.id) return "";
-		// Récupérer les infos de l'auteur
-		let author = null;
-		if (post.authorId === currentUser?.id) {
-			author = currentUser;
-		} else if (post.authorId) {
-			try {
-				const snap = await getDoc(doc(db, "users", post.authorId));
-				author = snap.exists()
-					? { id: snap.id, ...snap.data() }
-					: {
-							name: post.authorName || "Utilisateur",
-							handle: post.authorHandle || "user",
-							avatarColor: "#888",
-						};
-			} catch {
-				author = {
-					name: post.authorName || "Utilisateur",
-					handle: post.authorHandle || "user",
-					avatarColor: "#888",
-				};
-			}
-		} else {
-			author = { name: "Utilisateur", handle: "user", avatarColor: "#888" };
-		}
+  async postHTML(post) {
+    if (!post || !post.id) return ''
+    // Récupérer les infos de l'auteur
+    let author = null
+    if (post.authorId === currentUser?.id) {
+      author = currentUser
+    } else if (post.authorId) {
+      try {
+        const snap = await getDoc(doc(db, 'users', post.authorId))
+        author = snap.exists()
+          ? { id: snap.id, ...snap.data() }
+          : { name: post.authorName || 'Utilisateur', handle: post.authorHandle || 'user', avatarColor: '#888' }
+      } catch {
+        author = { name: post.authorName || 'Utilisateur', handle: post.authorHandle || 'user', avatarColor: '#888' }
+      }
+    } else {
+      author = { name: 'Utilisateur', handle: 'user', avatarColor: '#888' }
+    }
 
-		const isLiked = (post.likes || []).includes(currentUser.id);
-		const canDelete =
-			post.authorId === currentUser.id || currentUser.role === "admin";
-		const badges = {
-			public: '<span class="post-badge badge-public">&#127757; Public</span>',
-			followers:
-				'<span class="post-badge badge-followers">&#128101; Abonnés</span>',
-		};
-		// Badge de rôle visible sur le post
-		const roleBadge =
-			author.role === "certified"
-				? ' <span title="Certifié" style="color:#4a9eff;font-size:14px">&#9989;</span>'
-				: author.role === "admin"
-					? ' <span title="Admin" style="color:#7c6af7;font-size:14px">&#128737;</span>'
-					: author.customRole
-						? ` <span style="font-size:11px;color:#f5a623;background:rgba(245,166,35,0.12);padding:1px 6px;border-radius:10px">${esc(author.customRole)}</span>`
-						: "";
+    const isLiked = (post.likes || []).includes(currentUser.id)
+    const canDelete = post.authorId === currentUser.id || currentUser.role === 'admin'
+    const badges = {
+      public:    '<span class="post-badge badge-public">&#127757; Public</span>',
+      followers: '<span class="post-badge badge-followers">&#128101; Abonnés</span>'
+    }
+    // Badge de rôle visible sur le post
+    const roleBadge = author.role === 'certified'
+      ? ' <span title="Certifié" style="color:#4a9eff;font-size:14px">&#9989;</span>'
+      : author.role === 'admin'
+      ? ' <span title="Admin" style="color:#7c6af7;font-size:14px">&#128737;</span>'
+      : author.customRole
+      ? ` <span style="font-size:11px;color:#f5a623;background:rgba(245,166,35,0.12);padding:1px 6px;border-radius:10px">${esc(author.customRole)}</span>`
+      : ''
 
-		return `
+    return `
       <div class="post" id="post-${post.id}">
         ${avatarHTML(author)}
         <div class="post-body">
@@ -873,15 +700,15 @@ const V = (window.V = {
               onclick="V.go('profile','${author.id || post.authorId}')">
               ${esc(author.name)}
             </span>${roleBadge}
-            <span class="post-handle">@${esc(author.handle || "")}</span>
+            <span class="post-handle">@${esc(author.handle || '')}</span>
             <span class="post-time">${timeAgo(post.createdAt)}</span>
           </div>
-          ${badges[post.type] || ""}
+          ${badges[post.type] || ''}
           <div class="post-content">${formatContent(post.content)}</div>
           <div class="post-actions">
-            <button class="btn-action ${isLiked ? "liked" : ""}"
+            <button class="btn-action ${isLiked ? 'liked' : ''}"
               onclick="V.toggleLike('${post.id}', ${isLiked})">
-              <svg viewBox="0 0 24 24" fill="${isLiked ? "currentColor" : "none"}"
+              <svg viewBox="0 0 24 24" fill="${isLiked ? 'currentColor' : 'none'}"
                 stroke="currentColor" stroke-width="2">
                 <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/>
               </svg>
@@ -893,9 +720,7 @@ const V = (window.V = {
               </svg>
               ${post.commentCount || 0}
             </button>
-            ${
-							canDelete
-								? `
+            ${canDelete ? `
               <button class="btn-action" onclick="V.deletePost('${post.id}')"
                 style="margin-left:auto;color:#f26b6b">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -903,77 +728,72 @@ const V = (window.V = {
                   <path d="M19 6l-1 14H6L5 6"/>
                   <path d="M10 11v6M14 11v6"/>
                 </svg>
-              </button>`
-								: ""
-						}
+              </button>` : ''}
           </div>
         </div>
-      </div>`;
-	},
+      </div>`
+  },
 
-	async toggleLike(postId, isLiked) {
-		const postRef = doc(db, "posts", postId);
-		if (isLiked) {
-			await updateDoc(postRef, { likes: arrayRemove(currentUser.id) });
-		} else {
-			await updateDoc(postRef, { likes: arrayUnion(currentUser.id) });
-		}
-	},
+  async toggleLike(postId, isLiked) {
+    const postRef = doc(db, 'posts', postId)
+    if (isLiked) {
+      await updateDoc(postRef, { likes: arrayRemove(currentUser.id) })
+    } else {
+      await updateDoc(postRef, { likes: arrayUnion(currentUser.id) })
+    }
+  },
 
-	async deletePost(postId) {
-		if (!confirm("Supprimer cette publication ?")) return;
-		await deleteDoc(doc(db, "posts", postId));
-	},
+  async deletePost(postId) {
+    if (!confirm('Supprimer cette publication ?')) return
+    await deleteDoc(doc(db, 'posts', postId))
+  },
 
-	async showComments(postId) {
-		const snap = await getDocs(
-			query(
-				collection(db, "posts", postId, "comments"),
-				orderBy("createdAt", "asc"),
-			),
-		);
-		const comments = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-		let html = "";
-		for (const c of comments) {
-			let user = { name: "?", avatarColor: "#888" };
-			try {
-				const u = await getDoc(doc(db, "users", c.authorId));
-				if (u.exists()) user = u.data();
-			} catch {}
-			html += `
+  async showComments(postId) {
+    const snap = await getDocs(
+      query(collection(db, 'posts', postId, 'comments'), orderBy('createdAt', 'asc'))
+    )
+    const comments = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    let html = ''
+    for (const c of comments) {
+      let user = { name: '?', avatarColor: '#888' }
+      try {
+        const u = await getDoc(doc(db, 'users', c.authorId))
+        if (u.exists()) user = u.data()
+      } catch {}
+      html += `
         <div style="display:flex;gap:10px;margin-bottom:12px">
           ${avatarHTML(user)}
           <div>
             <div style="font-size:13px;font-weight:500">${esc(user.name)}</div>
             <div style="font-size:14px;margin-top:2px">${formatContent(c.text)}</div>
           </div>
-        </div>`;
-		}
-		this.showModal(`
+        </div>`
+    }
+    this.showModal(`
       <div class="modal-title">Commentaires</div>
       ${html || '<p style="color:var(--text3);font-size:14px;margin-bottom:12px">Aucun commentaire.</p>'}
       <div style="display:flex;gap:8px;margin-top:8px">
         <input type="text" class="form-input" id="comment-input" placeholder="Votre commentaire...">
         <button class="btn-primary" onclick="V.addComment('${postId}')">Envoyer</button>
-      </div>`);
-	},
+      </div>`)
+  },
 
-	async addComment(postId) {
-		const text = $("comment-input")?.value?.trim();
-		if (!text) return;
-		await addDoc(collection(db, "posts", postId, "comments"), {
-			authorId: currentUser.id,
-			text,
-			createdAt: serverTimestamp(),
-		});
-		await updateDoc(doc(db, "posts", postId), { commentCount: increment(1) });
-		this.closeModal();
-	},
+  async addComment(postId) {
+    const text = $('comment-input')?.value?.trim()
+    if (!text) return
+    await addDoc(collection(db, 'posts', postId, 'comments'), {
+      authorId: currentUser.id,
+      text,
+      createdAt: serverTimestamp()
+    })
+    await updateDoc(doc(db, 'posts', postId), { commentCount: increment(1) })
+    this.closeModal()
+  },
 
-	// ---- MESSAGES ----
+  // ---- MESSAGES ----
 
-	renderMessages(el) {
-		el.innerHTML = `
+  renderMessages(el) {
+    el.innerHTML = `
       <div style="max-width:680px;margin:0 auto;padding:0 16px">
         <div class="page-header"><div class="page-title">Messages</div></div>
         <div id="conv-list">
@@ -984,79 +804,67 @@ const V = (window.V = {
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
         </svg>
-      </button>`;
+      </button>`
 
-		const q = query(
-			collection(db, "conversations"),
-			orderBy("lastAt", "desc"),
-			limit(100),
-		);
-		const unsub = onSnapshot(q, async (snap) => {
-			const list = $("conv-list");
-			if (!list) return;
-			const convs = snap.docs
-				.map((d) => ({ id: d.id, ...d.data() }))
-				.filter((c) => (c.members || []).includes(currentUser.id));
-			if (!convs.length) {
-				list.innerHTML =
-					'<div class="empty-state"><p>Aucune conversation.</p></div>';
-				return;
-			}
-			list.innerHTML = "";
-			for (const conv of convs) {
-				const otherId = conv.members.find((m) => m !== currentUser.id);
-				if (!otherId) continue;
-				const userSnap = await getDoc(doc(db, "users", otherId));
-				const other = userSnap.exists()
-					? { id: otherId, ...userSnap.data() }
-					: {
-							id: otherId,
-							name: "Utilisateur",
-							handle: "user",
-							avatarColor: "#888",
-						};
-				const hasUnread = (conv.unread || {})[currentUser.id] > 0;
-				const div = document.createElement("div");
-				div.innerHTML = `
-          <div class="msg-item ${hasUnread ? "unread" : ""}"
+    const q = query(
+      collection(db, 'conversations'),
+      orderBy('lastAt', 'desc'),
+      limit(100)
+    )
+    const unsub = onSnapshot(q, async snap => {
+      const list = $('conv-list')
+      if (!list) return
+      const convs = snap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter(c => (c.members || []).includes(currentUser.id))
+      if (!convs.length) {
+        list.innerHTML = '<div class="empty-state"><p>Aucune conversation.</p></div>'
+        return
+      }
+      list.innerHTML = ''
+      for (const conv of convs) {
+        const otherId = conv.members.find(m => m !== currentUser.id)
+        if (!otherId) continue
+        const userSnap = await getDoc(doc(db, 'users', otherId))
+        const other = userSnap.exists()
+          ? { id: otherId, ...userSnap.data() }
+          : { id: otherId, name: 'Utilisateur', handle: 'user', avatarColor: '#888' }
+        const hasUnread = (conv.unread || {})[currentUser.id] > 0
+        const div = document.createElement('div')
+        div.innerHTML = `
+          <div class="msg-item ${hasUnread ? 'unread' : ''}"
             onclick="V.go('chat',{uid:'${otherId}',cid:'${conv.id}'})">
             ${avatarHTML(other)}
             <div class="msg-info">
               <div class="msg-name">${esc(other.name)}</div>
-              <div class="msg-preview">${esc((conv.lastMsg || "").substring(0, 60))}</div>
+              <div class="msg-preview">${esc((conv.lastMsg || '').substring(0, 60))}</div>
             </div>
             <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
               <div style="font-size:12px;color:var(--text3)">${timeAgo(conv.lastAt)}</div>
-              ${hasUnread ? '<div class="msg-dot"></div>' : ""}
+              ${hasUnread ? '<div class="msg-dot"></div>' : ''}
             </div>
-          </div>`;
-				list.appendChild(div.firstChild);
-			}
-		});
-		listeners.push(unsub);
-	},
+          </div>`
+        list.appendChild(div.firstChild)
+      }
+    })
+    listeners.push(unsub)
+  },
 
-	// ---- CHAT EN TEMPS RÉEL ----
+  // ---- CHAT EN TEMPS RÉEL ----
 
-	async renderChat(el, data) {
-		if (!data) {
-			this.go("messages");
-			return;
-		}
-		const { uid, cid } = data;
-		const isGroup = uid === "__group__" || !!data.groupId;
-		const groupId = data.groupId || (isGroup ? cid : null);
+  async renderChat(el, data) {
+    if (!data) { this.go('messages'); return }
+    const { uid, cid } = data
+    const isGroup = uid === '__group__' || !!data.groupId
+    const groupId = data.groupId || (isGroup ? cid : null)
 
-		// ---- CAS GROUPE ----
-		if (isGroup && groupId) {
-			const groupSnap = await getDoc(doc(db, "groups", groupId));
-			if (!groupSnap.exists()) {
-				this.go("groups");
-				return;
-			}
-			const group = { id: groupId, ...groupSnap.data() };
+    // ---- CAS GROUPE ----
+    if (isGroup && groupId) {
+      const groupSnap = await getDoc(doc(db, 'groups', groupId))
+      if (!groupSnap.exists()) { this.go('groups'); return }
+      const group = { id: groupId, ...groupSnap.data() }
 
-			el.innerHTML = `
+      el.innerHTML = `
         <div class="chat-window">
           <div class="chat-header">
             <button class="btn-action" onclick="V.go('groups')">
@@ -1064,7 +872,7 @@ const V = (window.V = {
                 <polyline points="15 18 9 12 15 6"/>
               </svg>
             </button>
-            <div style="width:36px;height:36px;border-radius:12px;background:var(--accent-bg2);display:flex;align-items:center;justify-content:center;font-size:20px">${group.emoji || String.fromCodePoint(0x1f4ac)}</div>
+            <div style="width:36px;height:36px;border-radius:12px;background:var(--accent-bg2);display:flex;align-items:center;justify-content:center;font-size:20px">${group.emoji || String.fromCodePoint(0x1F4AC)}</div>
             <div>
               <div style="font-weight:500;font-size:15px">${esc(group.name)}</div>
               <div style="font-size:12px;color:var(--text3)">${(group.members || []).length} membre(s)</div>
@@ -1088,58 +896,58 @@ const V = (window.V = {
               </svg>
             </button>
           </div>
-        </div>`;
+        </div>`
 
-			// Écouter les messages du groupe (Realtime Database)
-			const msgsRef = ref(rtdb, `group_msgs/${groupId}`);
-			chatUnsub = () => off(msgsRef);
-			// Charger les messages existants
-			onChildAdded(msgsRef, async (snap) => {
-				const msg = snap.val();
-				const isMe = msg.sid === currentUser.id;
-				const container = $("chat-messages");
-				if (!container) return;
-				// Vider l'état vide si c'est le premier message
-				const emptyState = container.querySelector(".empty-state");
-				if (emptyState) emptyState.remove();
-				// Récupérer le nom de l'expéditeur
-				let senderName = "Utilisateur";
-				let senderColor = "#7c6af7";
-				if (msg.sid === currentUser.id) {
-					senderName = currentUser.name;
-					senderColor = currentUser.avatarColor;
-				} else {
-					try {
-						const uSnap = await getDoc(doc(db, "users", msg.sid));
-						if (uSnap.exists()) {
-							senderName = uSnap.data().name;
-							senderColor = uSnap.data().avatarColor;
-						}
-					} catch {}
-				}
-				const div = document.createElement("div");
-				div.innerHTML = `
-          <div class="chat-msg ${isMe ? "me" : ""}">
-            ${!isMe ? `<div class="avatar" style="background:${senderColor};width:28px;height:28px;font-size:11px;flex-shrink:0">${senderName[0]}</div>` : ""}
+      // Écouter les messages du groupe (Realtime Database)
+      const msgsRef = ref(rtdb, `group_msgs/${groupId}`)
+      chatUnsub = () => off(msgsRef)
+      // Charger les messages existants
+      onChildAdded(msgsRef, async snap => {
+        const msg = snap.val()
+        const isMe = msg.sid === currentUser.id
+        const container = $('chat-messages')
+        if (!container) return
+        // Vider l'état vide si c'est le premier message
+        const emptyState = container.querySelector('.empty-state')
+        if (emptyState) emptyState.remove()
+        // Récupérer le nom de l'expéditeur
+        let senderName = 'Utilisateur'
+        let senderColor = '#7c6af7'
+        if (msg.sid === currentUser.id) {
+          senderName = currentUser.name
+          senderColor = currentUser.avatarColor
+        } else {
+          try {
+            const uSnap = await getDoc(doc(db, 'users', msg.sid))
+            if (uSnap.exists()) {
+              senderName = uSnap.data().name
+              senderColor = uSnap.data().avatarColor
+            }
+          } catch {}
+        }
+        const div = document.createElement('div')
+        div.innerHTML = `
+          <div class="chat-msg ${isMe ? 'me' : ''}">
+            ${!isMe ? `<div class="avatar" style="background:${senderColor};width:28px;height:28px;font-size:11px;flex-shrink:0">${senderName[0]}</div>` : ''}
             <div>
-              ${!isMe ? `<div style="font-size:11px;color:var(--text3);margin-bottom:3px">${esc(senderName)}</div>` : ""}
+              ${!isMe ? `<div style="font-size:11px;color:var(--text3);margin-bottom:3px">${esc(senderName)}</div>` : ''}
               <div class="chat-bubble">${formatContent(msg.c)}</div>
             </div>
-          </div>`;
-				container.appendChild(div.firstChild);
-				container.scrollTop = container.scrollHeight;
-			});
-			return;
-		}
+          </div>`
+        container.appendChild(div.firstChild)
+        container.scrollTop = container.scrollHeight
+      })
+      return
+    }
 
-		// ---- CAS MESSAGE DIRECT ----
-		const userSnap = await getDoc(doc(db, "users", uid));
-		const other = userSnap.exists()
-			? { id: uid, ...userSnap.data() }
-			: { id: uid, name: "Utilisateur", handle: "user", avatarColor: "#888" };
-		const online = await isOnline(uid);
+    // ---- CAS MESSAGE DIRECT ----
+    const userSnap = await getDoc(doc(db, 'users', uid))
+    const other = userSnap.exists()
+      ? { id: uid, ...userSnap.data() }
+      : { id: uid, name: 'Utilisateur', handle: 'user', avatarColor: '#888' }
+    const online = await isOnline(uid)
 
-		el.innerHTML = `
+    el.innerHTML = `
       <div class="chat-window">
         <div class="chat-header">
           <button class="btn-action" onclick="V.go('messages')">
@@ -1151,7 +959,7 @@ const V = (window.V = {
           <div>
             <div style="font-weight:500;font-size:15px">${esc(other.name)}</div>
             <div style="font-size:12px;color:var(--text3)" id="online-status">
-              ${online ? '<span class="online-dot"></span> En ligne' : "@" + esc(other.handle || "")}
+              ${online ? '<span class="online-dot"></span> En ligne' : '@' + esc(other.handle || '')}
             </div>
           </div>
         </div>
@@ -1161,187 +969,182 @@ const V = (window.V = {
           <textarea class="chat-input" id="chat-input"
             placeholder="Votre message..."
             rows="1"
-            onkeydown="V.chatKeydown(event,'${uid}','${cid || ""}')"
+            onkeydown="V.chatKeydown(event,'${uid}','${cid || ''}')"
             oninput="V.sendTypingSignal('${cid || uid}')">
           </textarea>
-          <button class="btn-send" onclick="V.sendMessage('${uid}','${cid || ""}')">
+          <button class="btn-send" onclick="V.sendMessage('${uid}','${cid || ''}')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="22" y1="2" x2="11" y2="13"/>
               <polygon points="22 2 15 22 11 13 2 9 22 2"/>
             </svg>
           </button>
         </div>
-      </div>`;
+      </div>`
 
-		// Trouver ou créer la conversation dans Firestore
-		let convId = cid;
-		if (!convId) {
-			const existing = await getDocs(
-				query(
-					collection(db, "conversations"),
-					where("members", "array-contains", currentUser.id),
-				),
-			);
-			const found = existing.docs.find((d) =>
-				(d.data().members || []).includes(uid),
-			);
-			if (found) {
-				convId = found.id;
-			} else {
-				const newConv = await addDoc(collection(db, "conversations"), {
-					members: [currentUser.id, uid],
-					lastMsg: "",
-					lastAt: serverTimestamp(),
-					unread: { [uid]: 0, [currentUser.id]: 0 },
-				});
-				convId = newConv.id;
-			}
-		}
+    // Trouver ou créer la conversation dans Firestore
+    let convId = cid
+    if (!convId) {
+      const existing = await getDocs(
+        query(collection(db, 'conversations'), orderBy('lastAt', 'desc'), limit(100))
+      )
+      const found = existing.docs.find(d => {
+        const members = d.data().members || []
+        return members.includes(currentUser.id) && members.includes(uid)
+      })
+      if (found) {
+        convId = found.id
+      } else {
+        const newConv = await addDoc(collection(db, 'conversations'), {
+          members: [currentUser.id, uid],
+          lastMsg: '',
+          lastAt:  serverTimestamp(),
+          unread:  { [uid]: 0, [currentUser.id]: 0 }
+        })
+        convId = newConv.id
+      }
+    }
 
-		// Marquer les messages comme lus
-		try {
-			await updateDoc(doc(db, "conversations", convId), {
-				[`unread.${currentUser.id}`]: 0,
-			});
-		} catch {}
+    // Mettre à jour les boutons avec le bon convId
+    const inputEl   = $('chat-input')
+    const sendBtn   = el.querySelector('.btn-send')
+    if (inputEl) {
+      inputEl.onkeydown = e => V.chatKeydown(e, uid, convId)
+      inputEl.oninput   = () => V.sendTypingSignal(convId)
+    }
+    if (sendBtn) sendBtn.onclick = () => V.sendMessage(uid, convId)
 
-		// Écouter les messages (Realtime Database)
-		const msgsRef = ref(rtdb, `msgs/${convId}`);
-		chatUnsub = () => off(msgsRef);
-		onChildAdded(msgsRef, (snap) => {
-			const msg = snap.val();
-			const isMe = msg.sid === currentUser.id;
-			const container = $("chat-messages");
-			if (!container) return;
-			const div = document.createElement("div");
-			div.innerHTML = `
-        <div class="chat-msg ${isMe ? "me" : ""}">
-          <div class="chat-bubble">${formatContent(msg.c)}</div>
-        </div>`;
-			container.appendChild(div.firstChild);
-			container.scrollTop = container.scrollHeight;
-		});
+    // Marquer les messages comme lus
+    try {
+      await updateDoc(doc(db, 'conversations', convId), {
+        [`unread.${currentUser.id}`]: 0
+      })
+    } catch {}
 
-		// Indicateur "en train d'écrire"
-		const typingRef = ref(rtdb, `typing/${convId}/${uid}`);
-		onValue(typingRef, (snap) => {
-			const ti = $("typing-indicator");
-			if (ti)
-				ti.textContent =
-					snap.val() === true ? `${other.name} est en train d'écrire...` : "";
-		});
+    // Écouter les messages en temps réel avec onValue (charge tout + écoute les nouveaux)
+    const msgsRef = ref(rtdb, `msgs/${convId}`)
+    let   rendered = new Set() // garder trace des messages déjà affichés
+    chatUnsub = () => off(msgsRef)
 
-		// Statut en ligne
-		const presRef = ref(rtdb, `presence/${uid}`);
-		onValue(presRef, (snap) => {
-			const status = $("online-status");
-			if (status) {
-				const d = snap.val();
-				status.innerHTML = d?.online
-					? '<span class="online-dot"></span> En ligne'
-					: "@" + esc(other.handle || "");
-			}
-		});
-	},
+    onValue(msgsRef, snap => {
+      const container = $('chat-messages')
+      if (!container) return
+      const data2 = snap.val()
+      if (!data2) {
+        container.innerHTML = '<div class="empty-state" style="padding:24px"><p>Aucun message. Dites bonjour !</p></div>'
+        return
+      }
+      // Trier tous les messages par timestamp
+      const msgs = Object.entries(data2)
+        .map(([k, v]) => ({ key: k, ...v }))
+        .sort((a, b) => (a.ts || 0) - (b.ts || 0))
 
-	async sendGroupMessage(groupId) {
-		const input = $("chat-input");
-		const text = input?.value?.trim();
-		if (!text) return;
-		input.value = "";
-		await push(ref(rtdb, `group_msgs/${groupId}`), {
-			sid: currentUser.id,
-			c: text,
-			ts: Date.now(),
-		});
-	},
+      // Ajouter seulement les nouveaux messages
+      let hasNew = false
+      msgs.forEach(msg => {
+        if (rendered.has(msg.key)) return
+        rendered.add(msg.key)
+        hasNew = true
+        // Retirer l'état vide si présent
+        const empty = container.querySelector('.empty-state')
+        if (empty) empty.remove()
+        const isMe = msg.sid === currentUser.id
+        const div  = document.createElement('div')
+        div.className = `chat-msg ${isMe ? 'me' : ''}`
+        div.innerHTML = `<div class="chat-bubble">${formatContent(msg.c)}</div>`
+        container.appendChild(div)
+      })
+      if (hasNew) container.scrollTop = container.scrollHeight
+    })
 
-	chatKeydown(e, uid, cid) {
-		if (e.key === "Enter" && !e.shiftKey) {
-			e.preventDefault();
-			if (uid === "__group__") {
-				this.sendGroupMessage(cid);
-			} else {
-				this.sendMessage(uid, cid);
-			}
-		}
-	},
+    // Indicateur "en train d'écrire"
+    const typingRef = ref(rtdb, `typing/${convId}/${uid}`)
+    onValue(typingRef, snap => {
+      const ti = $('typing-indicator')
+      if (ti) ti.textContent = snap.val() === true ? `${other.name} est en train d'\u00e9crire...` : ''
+    })
 
-	async sendTypingSignal(convId) {
-		if (!convId) return;
-		const typRef = ref(rtdb, `typing/${convId}/${currentUser.id}`);
-		await set(typRef, true);
-		clearTimeout(typingTimeout);
-		typingTimeout = setTimeout(() => set(typRef, false), 2000);
-	},
+    // Statut en ligne
+    const presRef = ref(rtdb, `presence/${uid}`)
+    onValue(presRef, snap => {
+      const status = $('online-status')
+      if (status) {
+        const d = snap.val()
+        status.innerHTML = d?.online
+          ? '<span class="online-dot"></span> En ligne'
+          : '@' + esc(other.handle || '')
+      }
+    })
+  },
 
-	async sendMessage(uid, cid) {
-		const input = $("chat-input");
-		const text = input?.value?.trim();
-		if (!text) return;
+  async sendGroupMessage(groupId) {
+    const input = $('chat-input')
+    const text = input?.value?.trim()
+    if (!text) return
+    input.value = ''
+    await push(ref(rtdb, `group_msgs/${groupId}`), {
+      sid: currentUser.id,
+      c: text,
+      ts: Date.now()
+    })
+  },
 
-		// Trouver/créer la conversation
-		let convId = cid;
-		if (!convId) {
-			const existing = await getDocs(
-				query(
-					collection(db, "conversations"),
-					where("members", "array-contains", currentUser.id),
-				),
-			);
-			const found = existing.docs.find((d) =>
-				(d.data().members || []).includes(uid),
-			);
-			if (found) {
-				convId = found.id;
-			} else {
-				const newConv = await addDoc(collection(db, "conversations"), {
-					members: [currentUser.id, uid],
-					lastMsg: "",
-					lastAt: serverTimestamp(),
-					unread: { [uid]: 0, [currentUser.id]: 0 },
-				});
-				convId = newConv.id;
-			}
-		}
+  chatKeydown(e, uid, cid) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      if (uid === '__group__') {
+        this.sendGroupMessage(cid)
+      } else {
+        this.sendMessage(uid, cid)
+      }
+    }
+  },
 
-		// Envoyer dans Realtime Database (instantané)
-		await push(ref(rtdb, `msgs/${convId}`), {
-			sid: currentUser.id,
-			c: text,
-			ts: Date.now(),
-		});
+  async sendTypingSignal(convId) {
+    if (!convId) return
+    const typRef = ref(rtdb, `typing/${convId}/${currentUser.id}`)
+    await set(typRef, true)
+    clearTimeout(typingTimeout)
+    typingTimeout = setTimeout(() => set(typRef, false), 2000)
+  },
 
-		// Mettre à jour le dernier message dans Firestore
-		await updateDoc(doc(db, "conversations", convId), {
-			lastMsg: text,
-			lastAt: serverTimestamp(),
-			[`unread.${uid}`]: 999,
-		});
+  async sendMessage(uid, cid) {
+    const input = $('chat-input')
+    const text  = input?.value?.trim()
+    if (!text || !cid) return
 
-		// Arrêter l'indicateur "en train d'écrire"
-		await set(ref(rtdb, `typing/${convId}/${currentUser.id}`), false);
-		input.value = "";
-	},
+    input.value = ''
 
-	async newMessage() {
-		const snap = await getDocs(collection(db, "users"));
-		const myFollowing = currentUser.following || [];
-		const myFollowers = currentUser.followers || [];
-		const knownIds = new Set([...myFollowing, ...myFollowers]);
-		const users = snap.docs
-			.filter(
-				(d) =>
-					d.id !== currentUser.id && !d.data().banned && knownIds.has(d.id),
-			)
-			.map((d) => ({ id: d.id, ...d.data() }));
-		this.showModal(`
+    // Envoyer dans Realtime Database (instantané)
+    await push(ref(rtdb, `msgs/${cid}`), {
+      sid: currentUser.id,
+      c:   text,
+      ts:  Date.now()
+    })
+
+    // Mettre à jour le dernier message dans Firestore (pour la liste des conversations)
+    try {
+      await updateDoc(doc(db, 'conversations', cid), {
+        lastMsg: text,
+        lastAt:  serverTimestamp(),
+        [`unread.${uid}`]: 999
+      })
+    } catch {}
+
+    // Arrêter l'indicateur "en train d'écrire"
+    await set(ref(rtdb, `typing/${cid}/${currentUser.id}`), false)
+  },
+
+  async newMessage() {
+    const snap  = await getDocs(collection(db, 'users'))
+    const myFollowing = currentUser.following || []
+    const myFollowers = currentUser.followers || []
+    const knownIds    = new Set([...myFollowing, ...myFollowers])
+    const users = snap.docs
+      .filter(d => d.id !== currentUser.id && !d.data().banned && knownIds.has(d.id))
+      .map(d => ({ id: d.id, ...d.data() }))
+    this.showModal(`
       <div class="modal-title">Nouveau message</div>
-      ${
-				users.length
-					? users
-							.map(
-								(u) => `
+      ${users.length ? users.map(u => `
         <div class="msg-item"
           onclick="V.closeModal();V.go('chat',{uid:'${u.id}',cid:''})">
           ${avatarHTML(u)}
@@ -1349,200 +1152,161 @@ const V = (window.V = {
             <div class="msg-name">${esc(u.name)}</div>
             <div class="msg-preview">@${esc(u.handle)}</div>
           </div>
-        </div>`,
-							)
-							.join("")
-					: `<div class="empty-state" style="padding:24px">
+        </div>`).join('')
+      : `<div class="empty-state" style="padding:24px">
           <p>Aucun contact disponible.</p>
           <p style="font-size:13px;margin-top:8px;color:var(--text3)">
             Suivez des utilisateurs ou attendez qu'ils vous suivent pour leur envoyer un message.
           </p>
-        </div>`
-			}`);
-	},
+        </div>`}`)
+  },
 
-	// ---- GROUPES ----
+  // ---- GROUPES ----
 
-	async renderGroups(el) {
-		el.innerHTML = `
+  async renderGroups(el) {
+    el.innerHTML = `
       <div style="max-width:680px;margin:0 auto;padding:0 16px">
         <div class="page-header"><div class="page-title">Groupes</div></div>
         <div class="loading-screen" style="height:200px"><div class="spinner"></div></div>
-      </div>`;
+      </div>`
 
-		const snap = await getDocs(collection(db, "groups"));
-		const groups = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-		// Seulement les groupes dont on est membre
-		const mine = groups.filter((g) =>
-			(g.members || []).includes(currentUser.id),
-		);
+    const snap   = await getDocs(collection(db, 'groups'))
+    const groups = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    // Seulement les groupes dont on est membre
+    const mine   = groups.filter(g => (g.members || []).includes(currentUser.id))
 
-		el.innerHTML = `
+    el.innerHTML = `
       <div style="max-width:680px;margin:0 auto;padding:0 16px 40px">
         <div class="page-header"><div class="page-title">Groupes</div></div>
         <button class="btn-primary" style="margin:16px 0;width:100%" onclick="V.showCreateGroupModal()">+ Cr\u00e9er un groupe</button>
-        ${
-					mine.length
-						? mine.map((g) => this.groupItemHTML(g, true)).join("")
-						: `<div class="empty-state">
+        ${mine.length
+          ? mine.map(g => this.groupItemHTML(g, true)).join('')
+          : `<div class="empty-state">
                <p>Vous n'\u00eates membre d'aucun groupe.</p>
                <p style="font-size:13px;margin-top:8px;color:var(--text3)">Cr\u00e9ez un groupe ou attendez une invitation.</p>
-             </div>`
-				}
-      </div>`;
-	},
+             </div>`}
+      </div>`
+  },
 
-	groupItemHTML(g, isMember) {
-		const isOwner = g.createdBy === currentUser.id;
-		return `
+  groupItemHTML(g, isMember) {
+    const isOwner = g.createdBy === currentUser.id
+    return `
       <div class="group-item">
-        <div class="group-icon">${g.emoji || String.fromCodePoint(0x1f4ac)}</div>
+        <div class="group-icon">${g.emoji || String.fromCodePoint(0x1F4AC)}</div>
         <div style="flex:1;cursor:pointer" onclick="V.openGroup('${g.id}')">
           <div style="font-size:14px;font-weight:500">${esc(g.name)}</div>
-          <div style="font-size:12px;color:var(--text3)">${(g.members || []).length} membre${(g.members || []).length > 1 ? "s" : ""}</div>
+          <div style="font-size:12px;color:var(--text3)">${(g.members || []).length} membre${(g.members || []).length > 1 ? 's' : ''}</div>
         </div>
         <div style="display:flex;gap:6px">
-          ${
-						isMember
-							? `<button class="btn-secondary" style="font-size:12px;padding:6px 10px" onclick="V.openGroup('${g.id}')">Ouvrir</button>
+          ${isMember
+            ? `<button class="btn-secondary" style="font-size:12px;padding:6px 10px" onclick="V.openGroup('${g.id}')">Ouvrir</button>
                <button class="btn-secondary" style="font-size:12px;padding:6px 10px" onclick="V.manageGroup('${g.id}')">&#9881;</button>
-               ${
-									isOwner
-										? `<button class="btn-danger" style="font-size:12px;padding:6px 10px" onclick="V.deleteGroup('${g.id}')">Suppr.</button>`
-										: `<button class="btn-secondary" style="font-size:12px;padding:6px 10px;color:var(--danger)" onclick="V.leaveGroup('${g.id}')">Quitter</button>`
-								}`
-							: `<button class="btn-follow" onclick="V.joinGroup('${g.id}')">Rejoindre</button>`
-					}
+               ${isOwner
+                 ? `<button class="btn-danger" style="font-size:12px;padding:6px 10px" onclick="V.deleteGroup('${g.id}')">Suppr.</button>`
+                 : `<button class="btn-secondary" style="font-size:12px;padding:6px 10px;color:var(--danger)" onclick="V.leaveGroup('${g.id}')">Quitter</button>`
+               }`
+            : `<button class="btn-follow" onclick="V.joinGroup('${g.id}')">Rejoindre</button>`
+          }
         </div>
-      </div>`;
-	},
+      </div>`
+  },
 
-	openGroup(groupId) {
-		this.go("chat", { uid: "__group__", cid: groupId, groupId: groupId });
-	},
+  openGroup(groupId) {
+    this.go('chat', { uid: '__group__', cid: groupId, groupId: groupId })
+  },
 
-	async joinGroup(groupId) {
-		await updateDoc(doc(db, "groups", groupId), {
-			members: arrayUnion(currentUser.id),
-		});
-		this.go("groups");
-	},
+  async joinGroup(groupId) {
+    await updateDoc(doc(db, 'groups', groupId), { members: arrayUnion(currentUser.id) })
+    this.go('groups')
+  },
 
-	async leaveGroup(groupId) {
-		if (!confirm("Quitter ce groupe ?")) return;
-		await updateDoc(doc(db, "groups", groupId), {
-			members: arrayRemove(currentUser.id),
-		});
-		this.go("groups");
-	},
+  async leaveGroup(groupId) {
+    if (!confirm('Quitter ce groupe ?')) return
+    await updateDoc(doc(db, 'groups', groupId), { members: arrayRemove(currentUser.id) })
+    this.go('groups')
+  },
 
-	async deleteGroup(groupId) {
-		if (!confirm("Supprimer ce groupe définitivement ?")) return;
-		await deleteDoc(doc(db, "groups", groupId));
-		this.go("groups");
-	},
+  async deleteGroup(groupId) {
+    if (!confirm('Supprimer ce groupe définitivement ?')) return
+    await deleteDoc(doc(db, 'groups', groupId))
+    this.go('groups')
+  },
 
-	async manageGroup(groupId) {
-		const snap = await getDoc(doc(db, "groups", groupId));
-		if (!snap.exists()) return;
-		const g = { id: snap.id, ...snap.data() };
-		const usersSnap = await getDocs(collection(db, "users"));
-		const allUsers = usersSnap.docs
-			.map((d) => ({ id: d.id, ...d.data() }))
-			.filter((u) => !u.banned);
-		const members = g.members || [];
-		const nonMembers = allUsers.filter(
-			(u) => !members.includes(u.id) && u.id !== currentUser.id,
-		);
+  async manageGroup(groupId) {
+    const snap = await getDoc(doc(db, 'groups', groupId))
+    if (!snap.exists()) return
+    const g = { id: snap.id, ...snap.data() }
+    const usersSnap = await getDocs(collection(db, 'users'))
+    const allUsers = usersSnap.docs.map(d => ({ id: d.id, ...d.data() })).filter(u => !u.banned)
+    const members = g.members || []
+    const nonMembers = allUsers.filter(u => !members.includes(u.id) && u.id !== currentUser.id)
 
-		const membersList = members
-			.map((uid) => {
-				const u = allUsers.find((x) => x.id === uid);
-				if (!u) return "";
-				return `
+    const membersList = members.map(uid => {
+      const u = allUsers.find(x => x.id === uid)
+      if (!u) return ''
+      return `
         <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
           ${avatarHTML(u)}
           <div style="flex:1"><div style="font-size:13px;font-weight:500">${esc(u.name)}</div><div style="font-size:12px;color:var(--text3)">@${esc(u.handle)}</div></div>
-          ${
-						uid !== currentUser.id && g.createdBy === currentUser.id
-							? `<button class="btn-secondary" style="font-size:11px;padding:4px 8px;color:var(--danger)" onclick="V.removeMember('${groupId}','${uid}')">Retirer</button>`
-							: uid === currentUser.id
-								? '<span style="font-size:11px;color:var(--text3)">Vous</span>'
-								: ""
-					}
-        </div>`;
-			})
-			.join("");
+          ${uid !== currentUser.id && g.createdBy === currentUser.id
+            ? `<button class="btn-secondary" style="font-size:11px;padding:4px 8px;color:var(--danger)" onclick="V.removeMember('${groupId}','${uid}')">Retirer</button>`
+            : uid === currentUser.id ? '<span style="font-size:11px;color:var(--text3)">Vous</span>' : ''
+          }
+        </div>`
+    }).join('')
 
-		const addList = nonMembers
-			.slice(0, 20)
-			.map(
-				(u) => `
+    const addList = nonMembers.slice(0, 20).map(u => `
       <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
         ${avatarHTML(u)}
         <div style="flex:1"><div style="font-size:13px;font-weight:500">${esc(u.name)}</div><div style="font-size:12px;color:var(--text3)">@${esc(u.handle)}</div></div>
         <button class="btn-follow" style="font-size:11px;padding:4px 10px" onclick="V.addMember('${groupId}','${u.id}')">Inviter</button>
-      </div>`,
-			)
-			.join("");
+      </div>`).join('')
 
-		this.showModal(`
-      <div class="modal-title">${esc(g.emoji || "")} ${esc(g.name)}</div>
+    this.showModal(`
+      <div class="modal-title">${esc(g.emoji || '')} ${esc(g.name)}</div>
       <div class="tab-bar" style="margin-bottom:12px">
         <div class="tab active" id="tab-members" onclick="V.switchGroupTab('members')">Membres (${members.length})</div>
         <div class="tab" id="tab-invite" onclick="V.switchGroupTab('invite')">Inviter</div>
       </div>
       <div id="group-tab-members">${membersList || '<p style="color:var(--text3);font-size:13px">Aucun membre.</p>'}</div>
       <div id="group-tab-invite" style="display:none">${addList || '<p style="color:var(--text3);font-size:13px">Tous les utilisateurs sont déjà membres.</p>'}</div>
-    `);
-	},
+    `)
+  },
 
-	switchGroupTab(tab) {
-		document
-			.querySelectorAll("#modal-content .tab")
-			.forEach((t) => t.classList.remove("active"));
-		document.getElementById("tab-" + tab)?.classList.add("active");
-		document.getElementById("group-tab-members").style.display =
-			tab === "members" ? "block" : "none";
-		document.getElementById("group-tab-invite").style.display =
-			tab === "invite" ? "block" : "none";
-	},
+  switchGroupTab(tab) {
+    document.querySelectorAll('#modal-content .tab').forEach(t => t.classList.remove('active'))
+    document.getElementById('tab-' + tab)?.classList.add('active')
+    document.getElementById('group-tab-members').style.display = tab === 'members' ? 'block' : 'none'
+    document.getElementById('group-tab-invite').style.display  = tab === 'invite'  ? 'block' : 'none'
+  },
 
-	async addMember(groupId, userId) {
-		await updateDoc(doc(db, "groups", groupId), {
-			members: arrayUnion(userId),
-		});
-		const btn = event?.target;
-		if (btn) {
-			btn.textContent = "Ajouté !";
-			btn.disabled = true;
-			btn.style.opacity = "0.5";
-		}
-	},
+  async addMember(groupId, userId) {
+    await updateDoc(doc(db, 'groups', groupId), { members: arrayUnion(userId) })
+    const btn = event?.target
+    if (btn) { btn.textContent = 'Ajouté !'; btn.disabled = true; btn.style.opacity = '0.5' }
+  },
 
-	async removeMember(groupId, userId) {
-		if (!confirm("Retirer ce membre du groupe ?")) return;
-		await updateDoc(doc(db, "groups", groupId), {
-			members: arrayRemove(userId),
-		});
-		this.closeModal();
-		this.manageGroup(groupId);
-	},
+  async removeMember(groupId, userId) {
+    if (!confirm('Retirer ce membre du groupe ?')) return
+    await updateDoc(doc(db, 'groups', groupId), { members: arrayRemove(userId) })
+    this.closeModal()
+    this.manageGroup(groupId)
+  },
 
-	showCreateGroupModal() {
-		const emojis = [
-			String.fromCodePoint(0x1f3a8),
-			String.fromCodePoint(0x1f4bb),
-			String.fromCodePoint(0x1f3b5),
-			String.fromCodePoint(0x1f3ae),
-			String.fromCodePoint(0x1f4da),
-			String.fromCodePoint(0x1f3c3),
-			String.fromCodePoint(0x1f355),
-			String.fromCodePoint(0x2708),
-			String.fromCodePoint(0x1f4a1),
-			String.fromCodePoint(0x1f33f),
-		];
-		this.showModal(`
+  showCreateGroupModal() {
+    const emojis = [
+      String.fromCodePoint(0x1F3A8),
+      String.fromCodePoint(0x1F4BB),
+      String.fromCodePoint(0x1F3B5),
+      String.fromCodePoint(0x1F3AE),
+      String.fromCodePoint(0x1F4DA),
+      String.fromCodePoint(0x1F3C3),
+      String.fromCodePoint(0x1F355),
+      String.fromCodePoint(0x2708),
+      String.fromCodePoint(0x1F4A1),
+      String.fromCodePoint(0x1F33F)
+    ]
+    this.showModal(`
       <div class="modal-title">Créer un groupe</div>
       <div class="form-group">
         <label class="form-label">Nom du groupe</label>
@@ -1551,53 +1315,44 @@ const V = (window.V = {
       <div class="form-group">
         <label class="form-label">Emoji</label>
         <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px" id="emoji-grid">
-          ${emojis
-						.map(
-							(e, i) =>
-								`<button onclick="V.selectEmoji(this,'${e}')"
-              style="font-size:22px;background:var(--bg3);border:2px solid ${i === 0 ? "var(--accent)" : "transparent"};border-radius:8px;padding:6px;cursor:pointer;line-height:1">${e}</button>`,
-						)
-						.join("")}
+          ${emojis.map((e, i) =>
+            `<button onclick="V.selectEmoji(this,'${e}')"
+              style="font-size:22px;background:var(--bg3);border:2px solid ${i===0?'var(--accent)':'transparent'};border-radius:8px;padding:6px;cursor:pointer;line-height:1">${e}</button>`
+          ).join('')}
         </div>
         <input type="hidden" id="group-emoji" id="group-emoji-hidden">
       </div>
       <div style="display:flex;gap:10px;margin-top:20px">
         <button class="btn-secondary" onclick="V.closeModal()">Annuler</button>
         <button class="btn-primary" onclick="V.createGroup()">Créer</button>
-      </div>`);
-	},
+      </div>`)
+  },
 
-	selectEmoji(btn, emoji) {
-		document
-			.querySelectorAll("#emoji-grid button")
-			.forEach((b) => (b.style.borderColor = "transparent"));
-		btn.style.borderColor = "var(--accent)";
-		$("group-emoji").value = emoji;
-	},
+  selectEmoji(btn, emoji) {
+    document.querySelectorAll('#emoji-grid button').forEach(b => b.style.borderColor = 'transparent')
+    btn.style.borderColor = 'var(--accent)'
+    $('group-emoji').value = emoji
+  },
 
-	async createGroup() {
-		const name = $("group-name")?.value?.trim();
-		const emoji = $("group-emoji")?.value || String.fromCodePoint(0x1f4ac);
-		if (!name) {
-			$("group-name")?.focus();
-			return;
-		}
-		await addDoc(collection(db, "groups"), {
-			name,
-			emoji,
-			members: [currentUser.id],
-			createdBy: currentUser.id,
-			createdAt: serverTimestamp(),
-		});
-		this.closeModal();
-		this.go("groups");
-	},
+  async createGroup() {
+    const name  = $('group-name')?.value?.trim()
+    const emoji = $('group-emoji')?.value || String.fromCodePoint(0x1F4AC)
+    if (!name) { $('group-name')?.focus(); return }
+    await addDoc(collection(db, 'groups'), {
+      name, emoji,
+      members:   [currentUser.id],
+      createdBy: currentUser.id,
+      createdAt: serverTimestamp()
+    })
+    this.closeModal()
+    this.go('groups')
+  },
 
-	// ---- RECHERCHE ----
+  // ---- RECHERCHE ----
 
-	renderSearch(el) {
-		searchTab = "users";
-		el.innerHTML = `
+  renderSearch(el) {
+    searchTab = 'users'
+    el.innerHTML = `
       <div class="main-inner">
         <div class="page-header"><div class="page-title">Recherche</div></div>
         <div class="search-box" style="margin-top:16px">
@@ -1617,288 +1372,274 @@ const V = (window.V = {
           &#128274; Pour trouver un utilisateur, entrez son <strong style="color:var(--text2)">pseudo exact</strong> (ex&nbsp;: <span style="color:var(--accent2)">@jean123</span>)
         </div>
         <div id="search-results" style="padding-top:8px"></div>
-      </div>`;
-	},
+      </div>`
+  },
 
-	setSearchTab(tab) {
-		searchTab = tab;
-		document
-			.querySelectorAll(".tab")
-			.forEach((t) => t.classList.remove("active"));
-		$("tab-" + tab)?.classList.add("active");
-		// Forcer le rechargement avec la valeur actuelle (ou vide pour afficher les derniers posts)
-		this.doSearch($("search-input")?.value || "");
-	},
+  setSearchTab(tab) {
+    searchTab = tab
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'))
+    $('tab-' + tab)?.classList.add('active')
+    // Forcer le rechargement avec la valeur actuelle (ou vide pour afficher les derniers posts)
+    this.doSearch($('search-input')?.value || '')
+  },
 
-	async doSearch(q) {
-		const results = $("search-results");
-		if (!results) return;
+  async doSearch(q) {
+    const results = $('search-results')
+    if (!results) return
 
-		// Mettre à jour le hint selon l'onglet actif
-		const hint = $("search-hint");
-		if (hint) {
-			if (searchTab === "users") {
-				hint.innerHTML =
-					'&#128274; Pour trouver un utilisateur, entrez son <strong style="color:var(--text2)">pseudo exact</strong> (ex&nbsp;: <span style="color:var(--accent2)">@jean123</span>)';
-			} else {
-				hint.innerHTML =
-					'&#128269; Recherchez par <strong style="color:var(--text2)">mot-cl\u00e9</strong>, <span style="color:var(--accent2)">#hashtag</span> ou phrase dans les publications publiques';
-			}
-		}
+    // Mettre à jour le hint selon l'onglet actif
+    const hint = $('search-hint')
+    if (hint) {
+      if (searchTab === 'users') {
+        hint.innerHTML = '&#128274; Pour trouver un utilisateur, entrez son <strong style="color:var(--text2)">pseudo exact</strong> (ex&nbsp;: <span style="color:var(--accent2)">@jean123</span>)'
+      } else {
+        hint.innerHTML = '&#128269; Recherchez par <strong style="color:var(--text2)">mot-cl\u00e9</strong>, <span style="color:var(--accent2)">#hashtag</span> ou phrase dans les publications publiques'
+      }
+    }
 
-		if (!q.trim()) {
-			// Onglet publications vide → afficher les derniers posts publics
-			if (searchTab === "posts") {
-				results.innerHTML =
-					'<div class="loading-screen" style="height:100px"><div class="spinner"></div></div>';
-				const snap = await getDocs(
-					query(
-						collection(db, "posts"),
-						orderBy("createdAt", "desc"),
-						limit(20),
-					),
-				);
-				const posts = snap.docs
-					.map((d) => ({ id: d.id, ...d.data() }))
-					.filter((p) => p.type === "public");
-				if (!posts.length) {
-					results.innerHTML =
-						'<div class="empty-state"><p>Aucune publication publique.</p></div>';
-					return;
-				}
-				results.innerHTML =
-					'<div style="font-size:12px;color:var(--text3);padding:8px 0 4px">Derni\u00e8res publications publiques</div>';
-				const htmlParts = await Promise.all(posts.map((p) => this.postHTML(p)));
-				results.innerHTML += htmlParts.filter(Boolean).join("");
-			} else {
-				results.innerHTML = "";
-			}
-			return;
-		}
+    if (!q.trim()) {
+      // Onglet publications vide → afficher les derniers posts publics
+      if (searchTab === 'posts') {
+        results.innerHTML = '<div class="loading-screen" style="height:100px"><div class="spinner"></div></div>'
+        const snap = await getDocs(query(collection(db, 'posts'), orderBy('createdAt', 'desc'), limit(20)))
+        const posts = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(p => p.type === 'public')
+        if (!posts.length) {
+          results.innerHTML = '<div class="empty-state"><p>Aucune publication publique.</p></div>'
+          return
+        }
+        results.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:8px 0 4px">Derni\u00e8res publications publiques</div>'
+        const htmlParts = await Promise.all(posts.map(p => this.postHTML(p)))
+        results.innerHTML += htmlParts.filter(Boolean).join('')
+      } else {
+        results.innerHTML = ''
+      }
+      return
+    }
 
-		results.innerHTML =
-			'<div class="loading-screen" style="height:100px"><div class="spinner"></div></div>';
+    results.innerHTML = '<div class="loading-screen" style="height:100px"><div class="spinner"></div></div>'
 
-		if (searchTab === "users") {
-			// Recherche uniquement par pseudo exact (avec ou sans @)
-			const handle = q.trim().replace(/^@/, "").toLowerCase();
-			if (handle.length < 2) {
-				results.innerHTML =
-					'<div class="empty-state"><p>Entrez un pseudo pour rechercher un utilisateur.</p></div>';
-				return;
-			}
-			const snap = await getDocs(collection(db, "users"));
-			const users = snap.docs
-				.filter((d) => d.id !== currentUser.id && !d.data().banned)
-				.map((d) => ({ id: d.id, ...d.data() }))
-				.filter((u) => u.handle?.toLowerCase() === handle);
+    if (searchTab === 'users') {
+      // Recherche uniquement par pseudo exact (avec ou sans @)
+      const handle = q.trim().replace(/^@/, '').toLowerCase()
+      if (handle.length < 2) {
+        results.innerHTML = '<div class="empty-state"><p>Entrez un pseudo pour rechercher un utilisateur.</p></div>'
+        return
+      }
+      const snap  = await getDocs(collection(db, 'users'))
+      const users = snap.docs
+        .filter(d => d.id !== currentUser.id && !d.data().banned)
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter(u => u.handle?.toLowerCase() === handle)
 
-			if (!users.length) {
-				results.innerHTML = `
+      if (!users.length) {
+        results.innerHTML = `
           <div class="empty-state">
             <p>Aucun utilisateur avec le pseudo <strong>@${esc(handle)}</strong></p>
             <p style="font-size:13px;margin-top:8px">Le pseudo doit \u00eatre exact.</p>
-          </div>`;
-				return;
-			}
+          </div>`
+        return
+      }
 
-			results.innerHTML = users
-				.map(
-					(u) => `
+      results.innerHTML = users.map(u => `
         <div class="user-card" onclick="V.go('profile','${u.id}')">
           ${avatarHTML(u)}
           <div class="user-card-info">
             <div class="user-card-name" style="display:flex;align-items:center;gap:6px">
               ${esc(u.name)}
-              ${u.role === "certified" ? '<span style="color:#4a9eff;font-size:13px">&#9989;</span>' : ""}
-              ${u.role === "admin" ? '<span style="color:#7c6af7;font-size:13px">&#128737;</span>' : ""}
+              ${u.role === 'certified' ? '<span style="color:#4a9eff;font-size:13px">&#9989;</span>' : ''}
+              ${u.role === 'admin' ? '<span style="color:#7c6af7;font-size:13px">&#128737;</span>' : ''}
             </div>
             <div class="user-card-bio">@${esc(u.handle)}</div>
           </div>
-          <button class="btn-follow ${(currentUser.following || []).includes(u.id) ? "following" : ""}"
+          <button class="btn-follow ${(currentUser.following || []).includes(u.id) ? 'following' : ''}"
             onclick="event.stopPropagation();V.toggleFollow('${u.id}',this)">
-            ${(currentUser.following || []).includes(u.id) ? "Suivi" : "Suivre"}
+            ${(currentUser.following || []).includes(u.id) ? 'Suivi' : 'Suivre'}
           </button>
-        </div>`,
-				)
-				.join("");
-		} else {
-			// Recherche dans les publications publiques
-			const snap = await getDocs(
-				query(
-					collection(db, "posts"),
-					orderBy("createdAt", "desc"),
-					limit(200),
-				),
-			);
-			const qLower = q.toLowerCase();
-			const posts = snap.docs
-				.map((d) => ({ id: d.id, ...d.data() }))
-				.filter((p) => {
-					if (p.type !== "public") return false;
-					const content = p.content?.toLowerCase() || "";
-					// Recherche par mot-clé ou hashtag
-					return (
-						content.includes(qLower) ||
-						content.includes(qLower.replace(/^#/, ""))
-					);
-				});
+        </div>`).join('')
 
-			if (!posts.length) {
-				results.innerHTML = `
+    } else {
+      // Recherche dans les publications publiques
+      const snap  = await getDocs(query(
+        collection(db, 'posts'),
+        orderBy('createdAt', 'desc'),
+        limit(200)
+      ))
+      const qLower = q.toLowerCase()
+      const posts = snap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter(p => {
+          if (p.type !== 'public') return false
+          const content = p.content?.toLowerCase() || ''
+          // Recherche par mot-clé ou hashtag
+          return content.includes(qLower) ||
+                 content.includes(qLower.replace(/^#/, ''))
+        })
+
+      if (!posts.length) {
+        results.innerHTML = `
           <div class="empty-state">
             <p>Aucune publication contenant <strong>"${esc(q)}"</strong></p>
             <p style="font-size:13px;margin-top:8px;color:var(--text3)">Essayez un autre mot-cl\u00e9 ou hashtag.</p>
-          </div>`;
-				return;
-			}
+          </div>`
+        return
+      }
 
-			results.innerHTML = `<div style="font-size:12px;color:var(--text3);padding:8px 0 4px">${posts.length} r\u00e9sultat${posts.length > 1 ? "s" : ""} pour "${esc(q)}"</div>`;
-			const htmlParts = await Promise.all(posts.map((p) => this.postHTML(p)));
-			results.innerHTML += htmlParts.filter(Boolean).join("");
-		}
-	},
+      results.innerHTML = `<div style="font-size:12px;color:var(--text3);padding:8px 0 4px">${posts.length} r\u00e9sultat${posts.length > 1 ? 's' : ''} pour "${esc(q)}"</div>`
+      const htmlParts = await Promise.all(posts.map(p => this.postHTML(p)))
+      results.innerHTML += htmlParts.filter(Boolean).join('')
+    }
+  },
 
-	async toggleFollow(uid, btn) {
-		const meRef = doc(db, "users", currentUser.id);
-		const themRef = doc(db, "users", uid);
-		const isFollowing = (currentUser.following || []).includes(uid);
-		if (isFollowing) {
-			await updateDoc(meRef, { following: arrayRemove(uid) });
-			await updateDoc(themRef, { followers: arrayRemove(currentUser.id) });
-			currentUser.following = (currentUser.following || []).filter(
-				(x) => x !== uid,
-			);
-			if (btn) {
-				btn.textContent = "Suivre";
-				btn.classList.remove("following");
-			}
-		} else {
-			await updateDoc(meRef, { following: arrayUnion(uid) });
-			await updateDoc(themRef, { followers: arrayUnion(currentUser.id) });
-			if (!currentUser.following) currentUser.following = [];
-			currentUser.following.push(uid);
-			if (btn) {
-				btn.textContent = "Suivi";
-				btn.classList.add("following");
-			}
-			// Notification
-			await addDoc(collection(db, "notifications"), {
-				toUid: uid,
-				fromUid: currentUser.id,
-				fromName: currentUser.name,
-				type: "follow",
-				read: false,
-				createdAt: serverTimestamp(),
-			});
-		}
-	},
+  async toggleFollow(uid, btn) {
+    const meRef   = doc(db, 'users', currentUser.id)
+    const themRef = doc(db, 'users', uid)
+    const isFollowing = (currentUser.following || []).includes(uid)
+    if (isFollowing) {
+      await updateDoc(meRef,   { following: arrayRemove(uid) })
+      await updateDoc(themRef, { followers: arrayRemove(currentUser.id) })
+      currentUser.following = (currentUser.following || []).filter(x => x !== uid)
+      if (btn) { btn.textContent = 'Suivre'; btn.classList.remove('following') }
+    } else {
+      await updateDoc(meRef,   { following: arrayUnion(uid) })
+      await updateDoc(themRef, { followers: arrayUnion(currentUser.id) })
+      if (!currentUser.following) currentUser.following = []
+      currentUser.following.push(uid)
+      if (btn) { btn.textContent = 'Suivi'; btn.classList.add('following') }
+      // Notification
+      await addDoc(collection(db, 'notifications'), {
+        toUid:    uid,
+        fromUid:  currentUser.id,
+        fromName: currentUser.name,
+        type:     'follow',
+        read:     false,
+        createdAt: serverTimestamp()
+      })
+    }
+  },
 
-	// ---- NOTIFICATIONS ----
+  // ---- NOTIFICATIONS ----
 
-	async renderNotifications(el) {
-		el.innerHTML = `
+  async renderNotifications(el) {
+    el.innerHTML = `
       <div style="max-width:680px;margin:0 auto;padding:0 16px">
         <div class="page-header"><div class="page-title">Notifications</div></div>
         <div class="loading-screen" style="height:200px"><div class="spinner"></div></div>
-      </div>`;
+      </div>`
 
-		const snap = await getDocs(
-			query(
-				collection(db, "notifications"),
-				orderBy("createdAt", "desc"),
-				limit(50),
-			),
-		);
-		const notifs = snap.docs
-			.map((d) => ({ id: d.id, ...d.data() }))
-			.filter((n) => n.toUid === currentUser.id);
+    const snap  = await getDocs(query(
+      collection(db, 'notifications'),
+      orderBy('createdAt', 'desc'),
+      limit(50)
+    ))
+    const notifs = snap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(n => n.toUid === currentUser.id)
 
-		const icons = {
-			like: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>`,
-			follow: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`,
-			comment: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>`,
-		};
-		const labels = {
-			like: "a aimé votre publication",
-			follow: "vous suit maintenant",
-			comment: "a commenté votre publication",
-		};
+    const icons = {
+      like:         `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>`,
+      follow:       `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`,
+      comment:      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>`,
+      group_invite: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>`
+    }
+    const colors = {
+      like: 'like', follow: 'follow', comment: 'comment', group_invite: 'follow'
+    }
 
-		el.innerHTML = `
+    const notifsHtml = notifs.length ? notifs.map(n => {
+      let text = ''
+      let extra = ''
+
+      if (n.type === 'group_invite') {
+        text = `<span>${esc(n.fromName || 'Admin')}</span> vous invite \u00e0 rejoindre le groupe <strong>${esc(n.groupName || '')}</strong>`
+        if (!n.responded) {
+          extra = `
+            <div style="display:flex;gap:8px;margin-top:8px">
+              <button class="btn-primary" style="font-size:12px;padding:6px 14px"
+                onclick="V.acceptGroupInvite('${n.id}','${n.groupId}')">
+                &#10003; Accepter
+              </button>
+              <button class="btn-secondary" style="font-size:12px;padding:6px 14px"
+                onclick="V.refuseGroupInvite('${n.id}')">
+                &#10005; Refuser
+              </button>
+            </div>`
+        } else {
+          extra = `<div style="font-size:12px;color:var(--text3);margin-top:6px">${n.accepted ? '&#10003; Invitation accept\u00e9e' : '&#10005; Invitation refus\u00e9e'}</div>`
+        }
+      } else if (n.type === 'like')    text = `<span>${esc(n.fromName || '?')}</span> a aim\u00e9 votre publication`
+      else if (n.type === 'follow')   text = `<span>${esc(n.fromName || '?')}</span> vous suit maintenant`
+      else if (n.type === 'comment')  text = `<span>${esc(n.fromName || '?')}</span> a comment\u00e9 votre publication`
+      else text = `<span>${esc(n.fromName || '?')}</span> ${esc(n.type)}`
+
+      return `
+        <div class="notif-item" style="${!n.read ? 'background:var(--accent-bg);border-radius:var(--radius-sm);padding:12px;margin-bottom:4px' : ''}">
+          <div class="notif-icon ${colors[n.type] || 'follow'}">${icons[n.type] || icons.follow}</div>
+          <div style="flex:1">
+            <div class="notif-text">${text}</div>
+            <div class="notif-time">${timeAgo(n.createdAt)}</div>
+            ${extra}
+          </div>
+        </div>`
+    }).join('')
+    : '<div class="empty-state"><p>Aucune notification.</p></div>'
+
+    el.innerHTML = `
       <div style="max-width:680px;margin:0 auto;padding:0 16px">
         <div class="page-header"><div class="page-title">Notifications</div></div>
-        <div>
-          ${
-						notifs.length
-							? notifs
-									.map(
-										(n) => `
-                <div class="notif-item">
-                  <div class="notif-icon ${n.type}">${icons[n.type] || ""}</div>
-                  <div>
-                    <div class="notif-text">
-                      <span>${esc(n.fromName || "Quelqu'un")}</span>
-                      ${labels[n.type] || n.type}
-                    </div>
-                    <div class="notif-time">${timeAgo(n.createdAt)}</div>
-                  </div>
-                </div>`,
-									)
-									.join("")
-							: '<div class="empty-state"><p>Aucune notification.</p></div>'
-					}
-        </div>
-      </div>`;
+        <div style="padding-top:8px">${notifsHtml}</div>
+      </div>`
 
-		// Marquer toutes comme lues
-		snap.docs.forEach((d) => {
-			if (!d.data().read)
-				updateDoc(doc(db, "notifications", d.id), { read: true });
-		});
-	},
+    // Marquer les notifications standard comme lues (pas les invitations en attente)
+    snap.docs.forEach(d => {
+      const data = d.data()
+      if (!data.read && !(data.type === 'group_invite' && !data.responded)) {
+        updateDoc(doc(db, 'notifications', d.id), { read: true })
+      }
+    })
+  },
 
-	// ---- PROFIL ----
+  // ---- PROFIL ----
 
-	async renderProfile(el, uid) {
-		el.innerHTML = `
+  async renderProfile(el, uid) {
+    el.innerHTML = `
       <div class="main-inner">
         <div class="loading-screen" style="height:200px"><div class="spinner"></div></div>
-      </div>`;
+      </div>`
 
-		const snap = await getDoc(doc(db, "users", uid));
-		if (!snap.exists()) {
-			el.innerHTML =
-				'<div class="empty-state"><p>Utilisateur introuvable.</p></div>';
-			return;
-		}
-		const user = { id: uid, ...snap.data() };
-		const isMe = uid === currentUser.id;
-		const isFollowing = !isMe && (currentUser.following || []).includes(uid);
+    const snap = await getDoc(doc(db, 'users', uid))
+    if (!snap.exists()) {
+      el.innerHTML = '<div class="empty-state"><p>Utilisateur introuvable.</p></div>'
+      return
+    }
+    const user  = { id: uid, ...snap.data() }
+    const isMe  = uid === currentUser.id
+    const isFollowing = !isMe && (currentUser.following || []).includes(uid)
 
-		const postsSnap = await getDocs(
-			query(collection(db, "posts"), orderBy("createdAt", "desc"), limit(50)),
-		);
-		const posts = postsSnap.docs
-			.map((d) => ({ id: d.id, ...d.data() }))
-			.filter((p) => p.authorId === uid && (p.type === "public" || isMe));
+    const postsSnap = await getDocs(query(
+      collection(db, 'posts'),
+      orderBy('createdAt', 'desc'),
+      limit(50)
+    ))
+    const posts = postsSnap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(p => p.authorId === uid && (p.type === 'public' || isMe))
 
-		el.innerHTML = `
+    el.innerHTML = `
       <div class="main-inner">
         <div class="page-header">
-          <div class="page-title">${isMe ? "Mon profil" : esc(user.name)}</div>
+          <div class="page-title">${isMe ? 'Mon profil' : esc(user.name)}</div>
         </div>
         <div class="profile-header">
-          ${avatarHTML(user, "avatar-xl")}
+          ${avatarHTML(user, 'avatar-xl')}
           <div style="margin-top:12px">
             <div style="font-family:var(--font-display);font-size:22px;font-weight:700">
               ${esc(user.name)}
             </div>
             <div style="color:var(--text3);font-size:14px;margin-top:2px">
-              @${esc(user.handle || "")}
+              @${esc(user.handle || '')}
             </div>
           </div>
-          ${user.bio ? `<div style="font-size:14px;color:var(--text2);margin:10px 0">${esc(user.bio)}</div>` : ""}
+          ${user.bio ? `<div style="font-size:14px;color:var(--text2);margin:10px 0">${esc(user.bio)}</div>` : ''}
           <div class="profile-stats">
             <div class="stat">
               <div class="stat-val">${posts.length}</div>
@@ -1913,53 +1654,50 @@ const V = (window.V = {
               <div class="stat-lbl">Abonnements</div>
             </div>
           </div>
-          ${
-						isMe
-							? `<button class="btn-secondary" style="margin-top:16px"
+          ${isMe
+            ? `<button class="btn-secondary" style="margin-top:16px"
                 onclick="V.go('settings')">Modifier le profil</button>`
-							: `<div style="display:flex;gap:10px;justify-content:center;margin-top:16px">
-                <button class="btn-follow ${isFollowing ? "following" : ""}"
+            : `<div style="display:flex;gap:10px;justify-content:center;margin-top:16px">
+                <button class="btn-follow ${isFollowing ? 'following' : ''}"
                   onclick="V.toggleFollow('${uid}',this)">
-                  ${isFollowing ? "Suivi" : "Suivre"}
+                  ${isFollowing ? 'Suivi' : 'Suivre'}
                 </button>
                 <button class="btn-secondary"
                   onclick="V.go('chat',{uid:'${uid}',cid:''})">Message</button>
                </div>`
-					}
+          }
         </div>
         <div id="profile-posts">
           <div class="loading-screen" style="height:100px"><div class="spinner"></div></div>
         </div>
-      </div>`;
+      </div>`
 
-		const postsContainer = $("profile-posts");
-		if (!posts.length) {
-			postsContainer.innerHTML =
-				'<div class="empty-state"><p>Aucune publication publique.</p></div>';
-			return;
-		}
-		postsContainer.innerHTML = "";
-		for (const p of posts) {
-			const div = document.createElement("div");
-			div.innerHTML = await this.postHTML(p);
-			postsContainer.appendChild(div.firstChild);
-		}
-	},
+    const postsContainer = $('profile-posts')
+    if (!posts.length) {
+      postsContainer.innerHTML = '<div class="empty-state"><p>Aucune publication publique.</p></div>'
+      return
+    }
+    postsContainer.innerHTML = ''
+    for (const p of posts) {
+      const div = document.createElement('div')
+      div.innerHTML = await this.postHTML(p)
+      postsContainer.appendChild(div.firstChild)
+    }
+  },
 
-	// ---- PARAMÈTRES ----
+  // ---- PARAMÈTRES ----
 
-	renderSettings(el) {
-		const themes = [
-			{ id: "dark", label: "Nuit", c1: "#141417", c2: "#7c6af7" },
-			{ id: "light", label: "Jour", c1: "#f4f3f9", c2: "#6452e9" },
-			{ id: "rose", label: "Rose", c1: "#17111a", c2: "#d46ef5" },
-			{ id: "ocean", label: "Océan", c1: "#0b1525", c2: "#4a9eff" },
-			{ id: "forest", label: "Forêt", c1: "#0e1a10", c2: "#4ecb7a" },
-		];
-		const currentTheme =
-			document.documentElement.getAttribute("data-theme") || "dark";
+  renderSettings(el) {
+    const themes = [
+      { id: 'dark',   label: 'Nuit',   c1: '#141417', c2: '#7c6af7' },
+      { id: 'light',  label: 'Jour',   c1: '#f4f3f9', c2: '#6452e9' },
+      { id: 'rose',   label: 'Rose',   c1: '#17111a', c2: '#d46ef5' },
+      { id: 'ocean',  label: 'Océan',  c1: '#0b1525', c2: '#4a9eff' },
+      { id: 'forest', label: 'Forêt',  c1: '#0e1a10', c2: '#4ecb7a' }
+    ]
+    const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark'
 
-		el.innerHTML = `
+    el.innerHTML = `
       <div style="max-width:680px;margin:0 auto;padding:0 16px 40px">
         <div class="page-header"><div class="page-title">Paramètres</div></div>
 
@@ -1967,27 +1705,21 @@ const V = (window.V = {
           <h3>Apparence</h3>
           <div class="form-label" style="margin-bottom:10px">Thème</div>
           <div class="theme-grid">
-            ${themes
-							.map(
-								(t) => `
+            ${themes.map(t => `
               <div style="text-align:center">
-                <button class="theme-btn ${currentTheme === t.id ? "active" : ""}"
+                <button class="theme-btn ${currentTheme === t.id ? 'active' : ''}"
                   onclick="V.setTheme('${t.id}')"
                   style="background:linear-gradient(135deg,${t.c1} 50%,${t.c2} 150%)"
                   title="${t.label}">
-                  ${
-										currentTheme === t.id
-											? `<svg style="width:16px;height:16px;color:#fff" viewBox="0 0 24 24"
+                  ${currentTheme === t.id
+                    ? `<svg style="width:16px;height:16px;color:#fff" viewBox="0 0 24 24"
                          fill="none" stroke="currentColor" stroke-width="3">
                          <polyline points="20 6 9 17 4 12"/>
                        </svg>`
-											: ""
-									}
+                    : ''}
                 </button>
                 <div style="font-size:11px;color:var(--text3);margin-top:4px">${t.label}</div>
-              </div>`,
-							)
-							.join("")}
+              </div>`).join('')}
           </div>
         </div>
 
@@ -1995,25 +1727,25 @@ const V = (window.V = {
           <h3>Informations du profil</h3>
           <div class="form-group">
             <label class="form-label">Nom d'affichage</label>
-            <input type="text" class="form-input" id="s-name" value="${esc(currentUser.name || "")}"/>
+            <input type="text" class="form-input" id="s-name" value="${esc(currentUser.name || '')}"/>
           </div>
           <div class="form-group">
             <label class="form-label">Pseudo</label>
-            <input type="text" class="form-input" id="s-handle" value="${esc(currentUser.handle || "")}"/>
+            <input type="text" class="form-input" id="s-handle" value="${esc(currentUser.handle || '')}"/>
           </div>
           <div class="form-group">
             <label class="form-label">Bio</label>
-            <textarea class="form-input form-textarea" id="s-bio">${esc(currentUser.bio || "")}</textarea>
+            <textarea class="form-input form-textarea" id="s-bio">${esc(currentUser.bio || '')}</textarea>
           </div>
           <div class="form-group">
             <label class="form-label">URL photo de profil</label>
             <input type="text" class="form-input" id="s-avatar"
-              value="${esc(currentUser.avatar || "")}" placeholder="https://..."/>
+              value="${esc(currentUser.avatar || '')}" placeholder="https://..."/>
           </div>
           <div class="form-group">
             <label class="form-label">Couleur de l'avatar</label>
             <input type="color" id="s-color"
-              value="${currentUser.avatarColor || "#7c6af7"}"
+              value="${currentUser.avatarColor || '#7c6af7'}"
               style="width:48px;height:36px;border-radius:8px;border:1px solid var(--border);cursor:pointer;background:transparent"/>
           </div>
           <button class="btn-primary" onclick="V.saveProfile()">Enregistrer</button>
@@ -2030,57 +1762,47 @@ const V = (window.V = {
             Supprimer mon compte
           </button>
         </div>
-      </div>`;
-	},
+      </div>`
+  },
 
-	setTheme(theme) {
-		document.documentElement.setAttribute("data-theme", theme);
-		localStorage.setItem("aevox_theme", theme);
-		this.go("settings");
-	},
+  setTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme)
+    localStorage.setItem('aevox_theme', theme)
+    this.go('settings')
+  },
 
-	async saveProfile() {
-		const name = $("s-name")?.value?.trim();
-		const handle = $("s-handle")
-			?.value?.trim()
-			?.replace(/[^a-z0-9_]/gi, "");
-		const bio = $("s-bio")?.value?.trim();
-		const avatar = $("s-avatar")?.value?.trim();
-		const color = $("s-color")?.value;
+  async saveProfile() {
+    const name   = $('s-name')?.value?.trim()
+    const handle = $('s-handle')?.value?.trim()?.replace(/[^a-z0-9_]/gi, '')
+    const bio    = $('s-bio')?.value?.trim()
+    const avatar = $('s-avatar')?.value?.trim()
+    const color  = $('s-color')?.value
 
-		if (!name || !handle) {
-			$("settings-message").innerHTML =
-				'<div class="alert alert-error">Nom et pseudo sont requis.</div>';
-			return;
-		}
+    if (!name || !handle) {
+      $('settings-message').innerHTML =
+        '<div class="alert alert-error">Nom et pseudo sont requis.</div>'
+      return
+    }
 
-		const updates = {
-			name,
-			handle,
-			bio,
-			avatarColor: color,
-			avatar: avatar || null,
-		};
-		await updateDoc(doc(db, "users", currentUser.id), updates);
-		Object.assign(currentUser, updates);
-		this.updateSidebar();
-		$("settings-message").innerHTML =
-			'<div class="alert alert-success">Profil mis à jour !</div>';
-	},
+    const updates = { name, handle, bio, avatarColor: color, avatar: avatar || null }
+    await updateDoc(doc(db, 'users', currentUser.id), updates)
+    Object.assign(currentUser, updates)
+    this.updateSidebar()
+    $('settings-message').innerHTML =
+      '<div class="alert alert-success">Profil mis à jour !</div>'
+  },
 
-	async deleteAccount() {
-		await deleteDoc(doc(db, "users", currentUser.id));
-		await this.logout();
-	},
+  async deleteAccount() {
+    await this.cleanupUserRelations(currentUser.id)
+    await deleteDoc(doc(db, 'users', currentUser.id))
+    await this.logout()
+  },
 
-	// ---- ADMINISTRATION ----
+  // ---- ADMINISTRATION ----
 
-	async renderAdmin(el) {
-		if (currentUser.role !== "admin") {
-			this.go("home");
-			return;
-		}
-		el.innerHTML = `
+  async renderAdmin(el) {
+    if (currentUser.role !== 'admin') { this.go('home'); return }
+    el.innerHTML = `
       <div style="max-width:900px;margin:0 auto;padding:0 16px 60px">
         <div class="page-header">
           <div class="page-title">&#128737;&#65039; Administration</div>
@@ -2100,135 +1822,93 @@ const V = (window.V = {
         <div id="admin-tab-content" style="margin-top:16px">
           <div class="loading-screen" style="height:200px"><div class="spinner"></div></div>
         </div>
-      </div>`;
+      </div>`
 
-		this.adminTab("overview");
-	},
+    this.adminTab('overview')
+  },
 
-	async adminTab(tab) {
-		// Mettre à jour les onglets
-		document
-			.querySelectorAll('[id^="atab-"]')
-			.forEach((t) => t.classList.remove("active"));
-		const activeTab = $("atab-" + tab);
-		if (activeTab) activeTab.classList.add("active");
-		const content = $("admin-tab-content");
-		if (!content) return;
-		content.innerHTML =
-			'<div class="loading-screen" style="height:200px"><div class="spinner"></div></div>';
+  async adminTab(tab) {
+    // Mettre à jour les onglets
+    document.querySelectorAll('[id^="atab-"]').forEach(t => t.classList.remove('active'))
+    const activeTab = $('atab-' + tab)
+    if (activeTab) activeTab.classList.add('active')
+    const content = $('admin-tab-content')
+    if (!content) return
+    content.innerHTML = '<div class="loading-screen" style="height:200px"><div class="spinner"></div></div>'
 
-		switch (tab) {
-			case "overview":
-				await this.adminOverview(content);
-				break;
-			case "users":
-				await this.adminUsers(content);
-				break;
-			case "posts":
-				await this.adminPosts(content);
-				break;
-			case "groups":
-				await this.adminGroups(content);
-				break;
-			case "roles":
-				await this.adminRoles(content);
-				break;
-			case "announce":
-				await this.adminAnnounce(content);
-				break;
-		}
-	},
+    switch(tab) {
+      case 'overview':  await this.adminOverview(content); break
+      case 'users':     await this.adminUsers(content); break
+      case 'posts':     await this.adminPosts(content); break
+      case 'groups':    await this.adminGroups(content); break
+      case 'roles':     await this.adminRoles(content); break
+      case 'announce':  await this.adminAnnounce(content); break
+    }
+  },
 
-	// ---- VUE D'ENSEMBLE ----
-	async adminOverview(el) {
-		const [usersSnap, postsSnap, groupsSnap, announceSnap] = await Promise.all([
-			getDocs(collection(db, "users")),
-			getDocs(collection(db, "posts")),
-			getDocs(collection(db, "groups")),
-			getDocs(collection(db, "announcements")),
-		]);
-		const users = usersSnap.docs.map((d) => d.data());
-		const posts = postsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  // ---- VUE D'ENSEMBLE ----
+  async adminOverview(el) {
+    const [usersSnap, postsSnap, groupsSnap, announceSnap] = await Promise.all([
+      getDocs(collection(db, 'users')),
+      getDocs(collection(db, 'posts')),
+      getDocs(collection(db, 'groups')),
+      getDocs(collection(db, 'announcements'))
+    ])
+    const users  = usersSnap.docs.map(d => d.data())
+    const posts  = postsSnap.docs.map(d => ({ id: d.id, ...d.data() }))
 
-		el.innerHTML = `
+    el.innerHTML = `
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px">
         ${[
-					{ val: users.length, lbl: "Utilisateurs", color: "#7c6af7" },
-					{
-						val: users.filter((u) => !u.banned).length,
-						lbl: "Actifs",
-						color: "#5dd89e",
-					},
-					{
-						val: users.filter((u) => u.banned).length,
-						lbl: "Bannis",
-						color: "#f26b6b",
-					},
-					{
-						val: users.filter((u) => u.role === "admin").length,
-						lbl: "Admins",
-						color: "#f5a623",
-					},
-					{ val: posts.length, lbl: "Publications", color: "#4a9eff" },
-					{ val: groupsSnap.size, lbl: "Groupes", color: "#d46ef5" },
-					{ val: announceSnap.size, lbl: "Annonces", color: "#4ecb7a" },
-				]
-					.map(
-						(s) => `
+          { val: users.length,                             lbl: 'Utilisateurs',  color: '#7c6af7' },
+          { val: users.filter(u=>!u.banned).length,        lbl: 'Actifs',        color: '#5dd89e' },
+          { val: users.filter(u=>u.banned).length,         lbl: 'Bannis',        color: '#f26b6b' },
+          { val: users.filter(u=>u.role==='admin').length, lbl: 'Admins',        color: '#f5a623' },
+          { val: posts.length,                             lbl: 'Publications',  color: '#4a9eff' },
+          { val: groupsSnap.size,                          lbl: 'Groupes',       color: '#d46ef5' },
+          { val: announceSnap.size,                        lbl: 'Annonces',      color: '#4ecb7a' },
+        ].map(s => `
           <div class="admin-stat">
             <div class="admin-stat-val" style="color:${s.color}">${s.val}</div>
             <div class="admin-stat-lbl">${s.lbl}</div>
-          </div>`,
-					)
-					.join("")}
+          </div>`).join('')}
       </div>
 
       <!-- Dernières inscriptions -->
       <div class="settings-section">
         <h3>&#128197; Dernières inscriptions</h3>
-        ${users
-					.slice(-5)
-					.reverse()
-					.map(
-						(u) => `
+        ${users.slice(-5).reverse().map(u => `
           <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
             ${avatarHTML(u)}
             <div style="flex:1">
               <div style="font-size:14px;font-weight:500">${esc(u.name)}</div>
-              <div style="font-size:12px;color:var(--text3)">@${esc(u.handle || "")} &bull; ${esc(u.email || "")}</div>
+              <div style="font-size:12px;color:var(--text3)">@${esc(u.handle||'')} &bull; ${esc(u.email||'')}</div>
             </div>
-            <span class="badge badge-${u.role === "admin" ? "admin" : u.banned ? "banned" : "user"}">
-              ${u.role === "admin" ? "Admin" : u.banned ? "Banni" : "Membre"}
+            <span class="badge badge-${u.role==='admin'?'admin':u.banned?'banned':'user'}">
+              ${u.role==='admin'?'Admin':u.banned?'Banni':'Membre'}
             </span>
-          </div>`,
-					)
-					.join("")}
+          </div>`).join('')}
       </div>
 
       <!-- Derniers posts -->
       <div class="settings-section">
         <h3>&#128196; Dernières publications</h3>
         <div id="admin-recent-posts"><div class="spinner"></div></div>
-      </div>`;
+      </div>`
 
-		try {
-			const htmlParts = await Promise.all(
-				posts.slice(0, 5).map((p) => this.postHTML(p)),
-			);
-			const c = $("admin-recent-posts");
-			if (c)
-				c.innerHTML =
-					htmlParts.filter(Boolean).join("") ||
-					'<p style="color:var(--text3)">Aucune publication.</p>';
-		} catch {}
-	},
+    try {
+      const htmlParts = await Promise.all(posts.slice(0, 5).map(p => this.postHTML(p)))
+      const c = $('admin-recent-posts')
+      if (c) c.innerHTML = htmlParts.filter(Boolean).join('') || '<p style="color:var(--text3)">Aucune publication.</p>'
+    } catch {}
+  },
 
-	// ---- GESTION DES MEMBRES ----
-	async adminUsers(el) {
-		const snap = await getDocs(collection(db, "users"));
-		const users = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  // ---- GESTION DES MEMBRES ----
+  async adminUsers(el) {
+    const snap  = await getDocs(collection(db, 'users'))
+    const users = snap.docs.map(d => ({ id: d.id, ...d.data() }))
 
-		el.innerHTML = `
+    el.innerHTML = `
       <div class="settings-section" style="overflow-x:auto">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
           <h3>&#128101; Gestion des membres (${users.length})</h3>
@@ -2246,59 +1926,52 @@ const V = (window.V = {
             </tr>
           </thead>
           <tbody id="admin-users-body">
-            ${users.map((u) => this.adminUserRow(u)).join("")}
+            ${users.map(u => this.adminUserRow(u)).join('')}
           </tbody>
         </table>
-      </div>`;
+      </div>`
 
-		// Stocker pour la recherche
-		window._adminUsers = users;
-	},
+    // Stocker pour la recherche
+    window._adminUsers = users
+  },
 
-	adminUserRow(u) {
-		let roleColor, roleLabel;
-		if (u.banned) {
-			roleColor = "#f26b6b";
-			roleLabel = "&#128683; Banni";
-		} else if (u.role === "admin") {
-			roleColor = "#7c6af7";
-			roleLabel = "&#128737; Admin";
-		} else if (u.role === "certified") {
-			roleColor = "#4a9eff";
-			roleLabel = "&#9989; Certifi\u00e9";
-		} else if (u.customRole) {
-			roleColor = "#f5a623";
-			roleLabel = esc(u.customRole);
-		} else {
-			roleColor = "#888";
-			roleLabel = "&#128100; Membre";
-		}
-		return `
-      <tr id="urow-${u.id}" style="${u.banned ? "opacity:0.55" : ""}">
+  adminUserRow(u) {
+    let roleColor, roleLabel
+    if (u.banned) {
+      roleColor = '#f26b6b'; roleLabel = '&#128683; Banni'
+    } else if (u.role === 'admin') {
+      roleColor = '#7c6af7'; roleLabel = '&#128737; Admin'
+    } else if (u.role === 'certified') {
+      roleColor = '#4a9eff'; roleLabel = '&#9989; Certifi\u00e9'
+    } else if (u.customRole) {
+      roleColor = '#f5a623'; roleLabel = esc(u.customRole)
+    } else {
+      roleColor = '#888'; roleLabel = '&#128100; Membre'
+    }
+    return `
+      <tr id="urow-${u.id}" style="${u.banned ? 'opacity:0.55' : ''}">
         <td>
           <div style="display:flex;align-items:center;gap:8px">
             ${avatarHTML(u)}
             <div>
               <div style="font-weight:500;font-size:13px">${esc(u.name)}</div>
-              <div style="font-size:12px;color:var(--text3)">@${esc(u.handle || "")}</div>
-              ${u.banReason ? `<div style="font-size:11px;color:#f26b6b">Raison : ${esc(u.banReason)}</div>` : ""}
+              <div style="font-size:12px;color:var(--text3)">@${esc(u.handle||'')}</div>
+              ${u.banReason ? `<div style="font-size:11px;color:#f26b6b">Raison : ${esc(u.banReason)}</div>` : ''}
             </div>
           </div>
         </td>
         <td>
           <div style="display:flex;flex-direction:column;gap:4px">
             <span class="badge" style="background:${roleColor}22;color:${roleColor}">${roleLabel}</span>
-            ${u.customRole && !u.banned ? `<span class="badge" style="background:#f5a62322;color:#f5a623;font-size:10px">${esc(u.customRole)}</span>` : ""}
+            ${u.customRole && !u.banned ? `<span class="badge" style="background:#f5a62322;color:#f5a623;font-size:10px">${esc(u.customRole)}</span>` : ''}
           </div>
         </td>
-        <td style="font-size:12px;color:var(--text3)">${esc(u.email || "")}</td>
+        <td style="font-size:12px;color:var(--text3)">${esc(u.email||'')}</td>
         <td>
-          ${
-						u.id !== currentUser.id
-							? `
+          ${u.id !== currentUser.id ? `
             <div style="display:flex;gap:6px;flex-wrap:wrap">
               <button class="btn-secondary" style="font-size:11px;padding:4px 8px"
-                onclick="V.showRoleModal('${u.id}','${esc(u.name)}','${esc(u.role || "")}','${esc(u.customRole || "")}')">
+                onclick="V.showRoleModal('${u.id}','${esc(u.name)}','${esc(u.role||'')}','${esc(u.customRole||'')}')">
                 R\u00f4le
               </button>
               <button class="btn-secondary" style="font-size:11px;padding:4px 8px"
@@ -2306,31 +1979,27 @@ const V = (window.V = {
                 Profil
               </button>
               <button onclick="V.showBanModal('${u.id}','${esc(u.name)}',${!!u.banned})"
-                style="font-size:11px;padding:4px 8px;border-radius:6px;cursor:pointer;border:1px solid ${u.banned ? "rgba(93,216,158,0.3)" : "rgba(242,107,107,0.3)"};background:${u.banned ? "rgba(93,216,158,0.08)" : "rgba(242,107,107,0.08)"};color:${u.banned ? "#5dd89e" : "#f26b6b"}">
-                ${u.banned ? "D\u00e9bannir" : "Bannir"}
+                style="font-size:11px;padding:4px 8px;border-radius:6px;cursor:pointer;border:1px solid ${u.banned?'rgba(93,216,158,0.3)':'rgba(242,107,107,0.3)'};background:${u.banned?'rgba(93,216,158,0.08)':'rgba(242,107,107,0.08)'};color:${u.banned?'#5dd89e':'#f26b6b'}">
+                ${u.banned ? 'D\u00e9bannir' : 'Bannir'}
               </button>
-            </div>`
-							: '<span style="font-size:12px;color:var(--text3)">Vous</span>'
-					}
+            </div>` : '<span style="font-size:12px;color:var(--text3)">Vous</span>'}
         </td>
-      </tr>`;
-	},
+      </tr>`
+  },
 
-	filterAdminUsers(q) {
-		const users = (window._adminUsers || []).filter(
-			(u) =>
-				!q ||
-				u.name?.toLowerCase().includes(q.toLowerCase()) ||
-				u.handle?.toLowerCase().includes(q.toLowerCase()) ||
-				u.email?.toLowerCase().includes(q.toLowerCase()),
-		);
-		const body = $("admin-users-body");
-		if (body) body.innerHTML = users.map((u) => this.adminUserRow(u)).join("");
-	},
+  filterAdminUsers(q) {
+    const users = (window._adminUsers || []).filter(u =>
+      !q || u.name?.toLowerCase().includes(q.toLowerCase()) ||
+      u.handle?.toLowerCase().includes(q.toLowerCase()) ||
+      u.email?.toLowerCase().includes(q.toLowerCase())
+    )
+    const body = $('admin-users-body')
+    if (body) body.innerHTML = users.map(u => this.adminUserRow(u)).join('')
+  },
 
-	// ---- GESTION DES POSTS ----
-	async adminPosts(el) {
-		el.innerHTML = `
+  // ---- GESTION DES POSTS ----
+  async adminPosts(el) {
+    el.innerHTML = `
       <div class="settings-section">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
           <h3>&#128196; Toutes les publications</h3>
@@ -2345,53 +2014,44 @@ const V = (window.V = {
         <div id="admin-all-posts">
           <div class="loading-screen" style="height:150px"><div class="spinner"></div></div>
         </div>
-      </div>`;
+      </div>`
 
-		await this.filterAdminPosts("all");
-	},
+    await this.filterAdminPosts('all')
+  },
 
-	async filterAdminPosts(filter) {
-		const snap = await getDocs(
-			query(collection(db, "posts"), orderBy("createdAt", "desc"), limit(100)),
-		);
-		let posts = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-		if (filter !== "all") posts = posts.filter((p) => p.type === filter);
-		const c = $("admin-all-posts");
-		if (!c) return;
-		if (!posts.length) {
-			c.innerHTML = '<div class="empty-state"><p>Aucune publication.</p></div>';
-			return;
-		}
-		const htmlParts = await Promise.all(posts.map((p) => this.postHTML(p)));
-		c.innerHTML = htmlParts.filter(Boolean).join("");
-	},
+  async filterAdminPosts(filter) {
+    const snap  = await getDocs(query(collection(db, 'posts'), orderBy('createdAt', 'desc'), limit(100)))
+    let posts = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    if (filter !== 'all') posts = posts.filter(p => p.type === filter)
+    const c = $('admin-all-posts')
+    if (!c) return
+    if (!posts.length) { c.innerHTML = '<div class="empty-state"><p>Aucune publication.</p></div>'; return }
+    const htmlParts = await Promise.all(posts.map(p => this.postHTML(p)))
+    c.innerHTML = htmlParts.filter(Boolean).join('')
+  },
 
-	// ---- GESTION DES GROUPES ----
-	async adminGroups(el) {
-		const snap = await getDocs(collection(db, "groups"));
-		const groups = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  // ---- GESTION DES GROUPES ----
+  async adminGroups(el) {
+    const snap   = await getDocs(collection(db, 'groups'))
+    const groups = snap.docs.map(d => ({ id: d.id, ...d.data() }))
 
-		el.innerHTML = `
+    el.innerHTML = `
       <div class="settings-section">
         <h3>&#128101; Tous les groupes (${groups.length})</h3>
-        ${
-					!groups.length
-						? '<div class="empty-state"><p>Aucun groupe.</p></div>'
-						: groups
-								.map(
-									(g) => `
+        ${!groups.length ? '<div class="empty-state"><p>Aucun groupe.</p></div>' :
+          groups.map(g => `
             <div style="background:var(--bg3);border-radius:var(--radius-sm);padding:14px;margin-bottom:10px">
               <div style="display:flex;align-items:center;gap:12px">
-                <div class="group-icon" style="flex-shrink:0">${g.emoji || "&#128172;"}</div>
+                <div class="group-icon" style="flex-shrink:0">${g.emoji||'&#128172;'}</div>
                 <div style="flex:1">
                   <div style="font-weight:500;font-size:15px">${esc(g.name)}</div>
                   <div style="font-size:12px;color:var(--text3);margin-top:2px">
-                    ${(g.members || []).length} membre(s) &bull; Cr\u00e9\u00e9 par ${esc(g.createdBy || "?")}
+                    ${(g.members||[]).length} membre(s) &bull; Cr\u00e9\u00e9 par ${esc(g.createdBy||'?')}
                   </div>
                 </div>
                 <div style="display:flex;gap:6px">
                   <button class="btn-secondary" style="font-size:12px;padding:6px 10px"
-                    onclick="V.adminGroupMembers('${g.id}','${esc(g.name)}',${JSON.stringify(g.members || []).replace(/"/g, "'")})">
+                    onclick="V.adminGroupMembers('${g.id}','${esc(g.name)}',${JSON.stringify(g.members||[]).replace(/"/g,"'")})">
                     Membres
                   </button>
                   <button onclick="V.adminDeleteGroup('${g.id}','${esc(g.name)}')"
@@ -2400,92 +2060,135 @@ const V = (window.V = {
                   </button>
                 </div>
               </div>
-            </div>`,
-								)
-								.join("")
-				}
-      </div>`;
-	},
+            </div>`).join('')}
+      </div>`
+  },
 
-	async adminGroupMembers(groupId, groupName, members) {
-		// Récupérer les noms des membres
-		const usersSnap = await getDocs(collection(db, "users"));
-		const allUsers = usersSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-		const memberUsers = allUsers.filter((u) => members.includes(u.id));
-		const nonMembers = allUsers.filter(
-			(u) => !members.includes(u.id) && !u.banned,
-		);
+  async adminGroupMembers(groupId, groupName, members) {
+    const usersSnap  = await getDocs(collection(db, 'users'))
+    const allUsers   = usersSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+    const memberUsers = allUsers.filter(u => members.includes(u.id))
+    const nonMembers  = allUsers.filter(u => !members.includes(u.id) && !u.banned && u.id !== currentUser.id)
 
-		this.showModal(`
+    this.showModal(`
       <div class="modal-title">Membres de "${esc(groupName)}"</div>
       <div style="margin-bottom:16px">
-        <div style="font-size:13px;color:var(--text3);margin-bottom:8px;font-weight:500">Membres actuels</div>
-        ${
-					memberUsers
-						.map(
-							(u) => `
+        <div style="font-size:13px;color:var(--text3);margin-bottom:8px;font-weight:500">
+          Membres actuels (${memberUsers.length})
+        </div>
+        ${memberUsers.map(u => `
           <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
             ${avatarHTML(u)}
             <div style="flex:1">
               <div style="font-size:13px;font-weight:500">${esc(u.name)}</div>
-              <div style="font-size:12px;color:var(--text3)">@${esc(u.handle || "")}</div>
+              <div style="font-size:12px;color:var(--text3)">@${esc(u.handle||'')}</div>
             </div>
             <button onclick="V.adminRemoveFromGroup('${groupId}','${u.id}','${esc(groupName)}')"
               style="font-size:11px;padding:4px 8px;border-radius:6px;cursor:pointer;border:1px solid rgba(242,107,107,0.3);background:rgba(242,107,107,0.08);color:#f26b6b">
               Retirer
             </button>
-          </div>`,
-						)
-						.join("") ||
-					'<p style="color:var(--text3);font-size:13px">Aucun membre.</p>'
-				}
+          </div>`).join('') || '<p style="color:var(--text3);font-size:13px">Aucun membre.</p>'}
       </div>
-      ${
-				nonMembers.length
-					? `
+      ${nonMembers.length ? `
         <div>
-          <div style="font-size:13px;color:var(--text3);margin-bottom:8px;font-weight:500">Ajouter un membre</div>
-          ${nonMembers
-						.map(
-							(u) => `
+          <div style="font-size:13px;color:var(--text3);margin-bottom:8px;font-weight:500">
+            Inviter un utilisateur
+          </div>
+          <div style="background:var(--accent-bg);border-radius:var(--radius-sm);padding:10px;margin-bottom:10px;font-size:12px;color:var(--accent2)">
+            &#128276; L'utilisateur recevra une notification pour accepter ou refuser l'invitation.
+          </div>
+          ${nonMembers.map(u => `
             <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
               ${avatarHTML(u)}
               <div style="flex:1">
                 <div style="font-size:13px;font-weight:500">${esc(u.name)}</div>
+                <div style="font-size:12px;color:var(--text3)">@${esc(u.handle||'')}</div>
               </div>
-              <button class="btn-secondary" style="font-size:11px;padding:4px 8px"
-                onclick="V.adminAddToGroup('${groupId}','${u.id}','${esc(groupName)}')">
-                Ajouter
+              <button class="btn-secondary" style="font-size:11px;padding:4px 10px"
+                onclick="V.sendGroupInvite('${groupId}','${esc(groupName)}','${u.id}','${esc(u.name)}',this)">
+                Inviter
               </button>
-            </div>`,
-						)
-						.join("")}
-        </div>`
-					: ""
-			}
+            </div>`).join('')}
+        </div>` : ''}
       <div class="btn-row" style="margin-top:16px">
         <button class="btn-secondary" onclick="V.closeModal()">Fermer</button>
-      </div>`);
-	},
+      </div>`)
+  },
 
-	async adminRemoveFromGroup(groupId, userId, groupName) {
-		await updateDoc(doc(db, "groups", groupId), {
-			members: arrayRemove(userId),
-		});
-		this.closeModal();
-		this.adminTab("groups");
-	},
+  async sendGroupInvite(groupId, groupName, toUid, toName, btn) {
+    if (btn) { btn.textContent = 'Envoy\u00e9 ✓'; btn.disabled = true; btn.style.color = 'var(--success)' }
+    // Vérifier si une invitation est déjà en attente
+    const existing = await getDocs(collection(db, 'notifications'))
+    const alreadySent = existing.docs.some(d => {
+      const n = d.data()
+      return n.type === 'group_invite' && n.groupId === groupId && n.toUid === toUid && !n.responded
+    })
+    if (alreadySent) {
+      if (btn) btn.textContent = 'D\u00e9j\u00e0 invit\u00e9'
+      return
+    }
+    await addDoc(collection(db, 'notifications'), {
+      type:      'group_invite',
+      toUid,
+      fromUid:   currentUser.id,
+      fromName:  currentUser.name,
+      groupId,
+      groupName,
+      responded: false,
+      read:      false,
+      createdAt: serverTimestamp()
+    })
+  },
 
-	async adminAddToGroup(groupId, userId, groupName) {
-		await updateDoc(doc(db, "groups", groupId), {
-			members: arrayUnion(userId),
-		});
-		this.closeModal();
-		this.adminTab("groups");
-	},
+  // ---- ACCEPTER / REFUSER invitation de groupe ----
+  async acceptGroupInvite(notifId, groupId) {
+    // Rejoindre le groupe
+    await updateDoc(doc(db, 'groups', groupId), { members: arrayUnion(currentUser.id) })
+    // Marquer la notif comme répondue
+    await updateDoc(doc(db, 'notifications', notifId), { responded: true, read: true, accepted: true })
+    this.go('notifications')
+    // Aller directement dans le groupe
+    setTimeout(() => this.go('chat', { uid: '__group__', cid: groupId, groupId }), 300)
+  },
 
-	async adminDeleteGroup(groupId, groupName) {
-		this.showModal(`
+  async refuseGroupInvite(notifId) {
+    await updateDoc(doc(db, 'notifications', notifId), { responded: true, read: true, accepted: false })
+    this.go('notifications')
+  },
+
+  // ---- NETTOYAGE bannissement / suppression de compte ----
+  async cleanupUserRelations(uid) {
+    try {
+      // Retirer des abonnements/abonnés de tous les utilisateurs
+      const usersSnap = await getDocs(collection(db, 'users'))
+      const batch = []
+      usersSnap.docs.forEach(d => {
+        const u = d.data()
+        const hasFollow  = (u.following || []).includes(uid)
+        const hasFollower = (u.followers || []).includes(uid)
+        if (hasFollow || hasFollower) {
+          const updates = {}
+          if (hasFollow)   updates.following = arrayRemove(uid)
+          if (hasFollower) updates.followers  = arrayRemove(uid)
+          batch.push(updateDoc(doc(db, 'users', d.id), updates))
+        }
+      })
+      await Promise.all(batch)
+      // Retirer des groupes
+      const groupsSnap = await getDocs(collection(db, 'groups'))
+      const groupBatch = groupsSnap.docs
+        .filter(d => (d.data().members || []).includes(uid))
+        .map(d => updateDoc(doc(db, 'groups', d.id), { members: arrayRemove(uid) }))
+      await Promise.all(groupBatch)
+    } catch (e) { console.error('Cleanup error:', e) }
+  },
+    await updateDoc(doc(db, 'groups', groupId), { members: arrayRemove(userId) })
+    this.closeModal()
+    this.adminTab('groups')
+  },
+
+  async adminDeleteGroup(groupId, groupName) {
+    this.showModal(`
       <div class="modal-title">Supprimer ce groupe ?</div>
       <p style="font-size:14px;color:var(--text2);margin-bottom:20px">
         Le groupe <strong>${esc(groupName)}</strong> sera supprim\u00e9 d\u00e9finitivement ainsi que tous ses messages.
@@ -2493,53 +2196,34 @@ const V = (window.V = {
       <div class="btn-row">
         <button class="btn-secondary" onclick="V.closeModal()">Annuler</button>
         <button class="btn-danger" onclick="V.confirmDeleteGroup('${groupId}')">Supprimer</button>
-      </div>`);
-	},
+      </div>`)
+  },
 
-	async confirmDeleteGroup(groupId) {
-		await deleteDoc(doc(db, "groups", groupId));
-		this.closeModal();
-		this.adminTab("groups");
-	},
+  async confirmDeleteGroup(groupId) {
+    await deleteDoc(doc(db, 'groups', groupId))
+    this.closeModal()
+    this.adminTab('groups')
+  },
 
-	// ---- GESTION DES RÔLES ----
-	async adminRoles(el) {
-		const snap = await getDocs(collection(db, "custom_roles"));
-		const customRoles = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  // ---- GESTION DES RÔLES ----
+  async adminRoles(el) {
+    const snap       = await getDocs(collection(db, 'custom_roles'))
+    const customRoles = snap.docs.map(d => ({ id: d.id, ...d.data() }))
 
-		el.innerHTML = `
+    el.innerHTML = `
       <div class="settings-section">
         <h3>&#127894;&#65039; R\u00f4les syst\u00e8me</h3>
         <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px">
           ${[
-						{
-							name: "admin",
-							label: "&#128737; Admin",
-							color: "#7c6af7",
-							desc: "Acc\u00e8s complet au panneau admin",
-						},
-						{
-							name: "certified",
-							label: "&#9989; Certifi\u00e9",
-							color: "#4a9eff",
-							desc: "Compte v\u00e9rifi\u00e9 et certifi\u00e9",
-						},
-						{
-							name: "user",
-							label: "&#128100; Membre",
-							color: "#888",
-							desc: "Membre standard",
-						},
-					]
-						.map(
-							(r) => `
+            { name: 'admin',     label: '&#128737; Admin',       color: '#7c6af7', desc: 'Acc\u00e8s complet au panneau admin' },
+            { name: 'certified', label: '&#9989; Certifi\u00e9', color: '#4a9eff', desc: 'Compte v\u00e9rifi\u00e9 et certifi\u00e9' },
+            { name: 'user',      label: '&#128100; Membre',      color: '#888',    desc: 'Membre standard' },
+          ].map(r => `
             <div style="display:flex;align-items:center;gap:12px;padding:12px;background:var(--bg3);border-radius:var(--radius-sm)">
               <span class="badge" style="background:${r.color}22;color:${r.color};font-size:13px">${r.label}</span>
               <div style="flex:1;font-size:13px;color:var(--text2)">${r.desc}</div>
               <span style="font-size:11px;color:var(--text3)">Syst\u00e8me</span>
-            </div>`,
-						)
-						.join("")}
+            </div>`).join('')}
         </div>
       </div>
 
@@ -2550,29 +2234,22 @@ const V = (window.V = {
             onclick="V.showCreateRoleModal()">+ Cr\u00e9er un r\u00f4le</button>
         </div>
         <div id="custom-roles-list">
-          ${
-						!customRoles.length
-							? '<div class="empty-state" style="padding:24px"><p>Aucun r\u00f4le personnalis\u00e9.</p></div>'
-							: customRoles
-									.map(
-										(r) => `
+          ${!customRoles.length ? '<div class="empty-state" style="padding:24px"><p>Aucun r\u00f4le personnalis\u00e9.</p></div>' :
+            customRoles.map(r => `
               <div style="display:flex;align-items:center;gap:12px;padding:12px;background:var(--bg3);border-radius:var(--radius-sm);margin-bottom:8px">
-                <span class="badge" style="background:${esc(r.color || "#888")}22;color:${esc(r.color || "#888")};font-size:13px">${esc(r.icon || "")} ${esc(r.name)}</span>
-                <div style="flex:1;font-size:13px;color:var(--text2)">${esc(r.description || "")}</div>
+                <span class="badge" style="background:${esc(r.color||'#888')}22;color:${esc(r.color||'#888')};font-size:13px">${esc(r.icon||'')} ${esc(r.name)}</span>
+                <div style="flex:1;font-size:13px;color:var(--text2)">${esc(r.description||'')}</div>
                 <button onclick="V.deleteCustomRole('${r.id}','${esc(r.name)}')"
                   style="font-size:11px;padding:4px 8px;border-radius:6px;cursor:pointer;border:1px solid rgba(242,107,107,0.3);background:rgba(242,107,107,0.08);color:#f26b6b">
                   Supprimer
                 </button>
-              </div>`,
-									)
-									.join("")
-					}
+              </div>`).join('')}
         </div>
-      </div>`;
-	},
+      </div>`
+  },
 
-	showCreateRoleModal() {
-		this.showModal(`
+  showCreateRoleModal() {
+    this.showModal(`
       <div class="modal-title">Cr\u00e9er un r\u00f4le personnalis\u00e9</div>
       <div class="form-group">
         <label class="form-label">Nom du r\u00f4le</label>
@@ -2585,22 +2262,10 @@ const V = (window.V = {
       <div class="form-group">
         <label class="form-label">Couleur</label>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
-          ${[
-						"#7c6af7",
-						"#4a9eff",
-						"#5dd89e",
-						"#f5a623",
-						"#f26b6b",
-						"#d46ef5",
-						"#4ecb7a",
-						"#ff6b9d",
-					]
-						.map(
-							(c) =>
-								`<button onclick="document.getElementById('role-color').value='${c}';document.querySelectorAll('.color-pick').forEach(b=>b.style.outline='none');this.style.outline='2px solid white'"
-              class="color-pick" style="width:28px;height:28px;border-radius:50%;background:${c};border:none;cursor:pointer"></button>`,
-						)
-						.join("")}
+          ${['#7c6af7','#4a9eff','#5dd89e','#f5a623','#f26b6b','#d46ef5','#4ecb7a','#ff6b9d'].map(c =>
+            `<button onclick="document.getElementById('role-color').value='${c}';document.querySelectorAll('.color-pick').forEach(b=>b.style.outline='none');this.style.outline='2px solid white'"
+              class="color-pick" style="width:28px;height:28px;border-radius:50%;background:${c};border:none;cursor:pointer"></button>`
+          ).join('')}
           <input type="color" id="role-color" value="#7c6af7"
             style="width:28px;height:28px;border-radius:50%;border:none;cursor:pointer;padding:0"/>
         </div>
@@ -2612,56 +2277,49 @@ const V = (window.V = {
       <div class="btn-row">
         <button class="btn-secondary" onclick="V.closeModal()">Annuler</button>
         <button class="btn-primary" onclick="V.saveCustomRole()">Cr\u00e9er</button>
-      </div>`);
-	},
+      </div>`)
+  },
 
-	async saveCustomRole() {
-		const name = $("role-name")?.value?.trim();
-		const icon = $("role-icon")?.value?.trim();
-		const color = $("role-color")?.value;
-		const desc = $("role-desc")?.value?.trim();
-		if (!name) return;
-		await addDoc(collection(db, "custom_roles"), {
-			name,
-			icon,
-			color,
-			description: desc,
-			createdBy: currentUser.id,
-			createdAt: serverTimestamp(),
-		});
-		this.closeModal();
-		this.adminTab("roles");
-	},
+  async saveCustomRole() {
+    const name  = $('role-name')?.value?.trim()
+    const icon  = $('role-icon')?.value?.trim()
+    const color = $('role-color')?.value
+    const desc  = $('role-desc')?.value?.trim()
+    if (!name) return
+    await addDoc(collection(db, 'custom_roles'), { name, icon, color, description: desc, createdBy: currentUser.id, createdAt: serverTimestamp() })
+    this.closeModal()
+    this.adminTab('roles')
+  },
 
-	async deleteCustomRole(roleId, roleName) {
-		if (!confirm(`Supprimer le r\u00f4le "${roleName}" ?`)) return;
-		await deleteDoc(doc(db, "custom_roles", roleId));
-		this.adminTab("roles");
-	},
+  async deleteCustomRole(roleId, roleName) {
+    if (!confirm(`Supprimer le r\u00f4le "${roleName}" ?`)) return
+    await deleteDoc(doc(db, 'custom_roles', roleId))
+    this.adminTab('roles')
+  },
 
-	// Modal pour assigner un rôle à un utilisateur
-	async showRoleModal(uid, name, currentRole, currentCustomRole) {
-		const snap = await getDocs(collection(db, "custom_roles"));
-		const customRoles = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  // Modal pour assigner un rôle à un utilisateur
+  async showRoleModal(uid, name, currentRole, currentCustomRole) {
+    const snap        = await getDocs(collection(db, 'custom_roles'))
+    const customRoles = snap.docs.map(d => ({ id: d.id, ...d.data() }))
 
-		this.showModal(`
+    this.showModal(`
       <div class="modal-title">R\u00f4le de ${esc(name)}</div>
 
       <!-- Aperçu -->
       <div style="background:var(--bg3);border-radius:var(--radius-sm);padding:12px;margin-bottom:16px;font-size:13px;color:var(--text2)">
         R\u00f4le actuel :
         <strong style="color:var(--text)">
-          ${currentRole === "admin" ? "&#128737; Admin" : currentRole === "certified" ? "&#9989; Certifi\u00e9" : "&#128100; Membre"}
-          ${currentCustomRole ? " + " + esc(currentCustomRole) : ""}
+          ${currentRole === 'admin' ? '&#128737; Admin' : currentRole === 'certified' ? '&#9989; Certifi\u00e9' : '&#128100; Membre'}
+          ${currentCustomRole ? ' + ' + esc(currentCustomRole) : ''}
         </strong>
       </div>
 
       <div class="form-group">
         <label class="form-label">R\u00f4le syst\u00e8me</label>
         <select class="form-input" id="role-system">
-          <option value="user"      ${currentRole === "user" || !currentRole ? "selected" : ""}>&#128100; Membre</option>
-          <option value="certified" ${currentRole === "certified" ? "selected" : ""}>&#9989; Certifi\u00e9</option>
-          <option value="admin"     ${currentRole === "admin" ? "selected" : ""}>&#128737; Admin</option>
+          <option value="user"      ${currentRole==='user'||(!currentRole)?'selected':''}>&#128100; Membre</option>
+          <option value="certified" ${currentRole==='certified'?'selected':''}>&#9989; Certifi\u00e9</option>
+          <option value="admin"     ${currentRole==='admin'?'selected':''}>&#128737; Admin</option>
         </select>
       </div>
 
@@ -2669,60 +2327,47 @@ const V = (window.V = {
         <label class="form-label">R\u00f4le personnalis\u00e9 (optionnel)</label>
         <select class="form-input" id="role-custom">
           <option value="">-- Aucun --</option>
-          ${customRoles
-						.map(
-							(r) =>
-								`<option value="${esc(r.name)}" ${currentCustomRole === r.name ? "selected" : ""}>${esc(r.icon || "")} ${esc(r.name)}</option>`,
-						)
-						.join("")}
+          ${customRoles.map(r =>
+            `<option value="${esc(r.name)}" ${currentCustomRole===r.name?'selected':''}>${esc(r.icon||'')} ${esc(r.name)}</option>`
+          ).join('')}
         </select>
-        ${
-					!customRoles.length
-						? `<div style="font-size:12px;color:var(--text3);margin-top:6px">
+        ${!customRoles.length ? `<div style="font-size:12px;color:var(--text3);margin-top:6px">
           Aucun r\u00f4le personnalis\u00e9. <span style="color:var(--accent2);cursor:pointer" onclick="V.closeModal();V.adminTab('roles')">En cr\u00e9er un ?</span>
-        </div>`
-						: ""
-				}
+        </div>` : ''}
       </div>
 
       <div class="btn-row">
         <button class="btn-secondary" onclick="V.closeModal()">Annuler</button>
         <button class="btn-primary" onclick="V.applyRole('${uid}')">&#10003; Appliquer</button>
-      </div>`);
-	},
+      </div>`)
+  },
 
-	async applyRole(uid) {
-		const systemRole = $("role-system")?.value || "user";
-		const customRole = $("role-custom")?.value || null;
+  async applyRole(uid) {
+    const systemRole = $('role-system')?.value || 'user'
+    const customRole = $('role-custom')?.value || null
 
-		await updateDoc(doc(db, "users", uid), {
-			role: systemRole,
-			customRole: customRole,
-		});
+    await updateDoc(doc(db, 'users', uid), {
+      role:       systemRole,
+      customRole: customRole
+    })
 
-		// Si c'est l'utilisateur courant, mettre à jour localement
-		if (uid === currentUser.id) {
-			currentUser.role = systemRole;
-			currentUser.customRole = customRole;
-			this.updateSidebar();
-		}
+    // Si c'est l'utilisateur courant, mettre à jour localement
+    if (uid === currentUser.id) {
+      currentUser.role = systemRole
+      currentUser.customRole = customRole
+      this.updateSidebar()
+    }
 
-		this.closeModal();
-		this.adminTab("users");
-	},
+    this.closeModal()
+    this.adminTab('users')
+  },
 
-	// ---- ANNONCES ----
-	async adminAnnounce(el) {
-		const snap = await getDocs(
-			query(
-				collection(db, "announcements"),
-				orderBy("createdAt", "desc"),
-				limit(20),
-			),
-		);
-		const anns = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  // ---- ANNONCES ----
+  async adminAnnounce(el) {
+    const snap  = await getDocs(query(collection(db, 'announcements'), orderBy('createdAt', 'desc'), limit(20)))
+    const anns  = snap.docs.map(d => ({ id: d.id, ...d.data() }))
 
-		el.innerHTML = `
+    el.innerHTML = `
       <div class="settings-section">
         <h3>&#128226; Nouvelle annonce</h3>
         <div class="form-group">
@@ -2748,29 +2393,16 @@ const V = (window.V = {
 
       <div class="settings-section">
         <h3>&#128195; Annonces publi\u00e9es (${anns.length})</h3>
-        ${
-					!anns.length
-						? '<div class="empty-state" style="padding:24px"><p>Aucune annonce.</p></div>'
-						: anns
-								.map((a) => {
-									const colors = {
-										info: "#4a9eff",
-										success: "#5dd89e",
-										warn: "#f5a623",
-										danger: "#f26b6b",
-									};
-									const icons = {
-										info: "ℹ️",
-										success: "✅",
-										warn: "⚠️",
-										danger: "🚫",
-									};
-									const c = colors[a.type] || "#888";
-									return `
+        ${!anns.length ? '<div class="empty-state" style="padding:24px"><p>Aucune annonce.</p></div>' :
+          anns.map(a => {
+            const colors = { info: '#4a9eff', success: '#5dd89e', warn: '#f5a623', danger: '#f26b6b' }
+            const icons  = { info: 'ℹ️', success: '✅', warn: '⚠️', danger: '🚫' }
+            const c = colors[a.type] || '#888'
+            return `
               <div style="background:${c}11;border:1px solid ${c}33;border-radius:var(--radius-sm);padding:14px;margin-bottom:10px">
                 <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
                   <div style="flex:1">
-                    <div style="font-weight:600;font-size:14px;color:${c}">${icons[a.type] || ""} ${esc(a.title)}</div>
+                    <div style="font-weight:600;font-size:14px;color:${c}">${icons[a.type]||''} ${esc(a.title)}</div>
                     <div style="font-size:13px;color:var(--text2);margin-top:6px">${esc(a.body)}</div>
                     <div style="font-size:11px;color:var(--text3);margin-top:6px">${timeAgo(a.createdAt)}</div>
                   </div>
@@ -2779,47 +2411,40 @@ const V = (window.V = {
                     Supprimer
                   </button>
                 </div>
-              </div>`;
-								})
-								.join("")
-				}
-      </div>`;
-	},
+              </div>`}).join('')}
+      </div>`
+  },
 
-	async publishAnnouncement() {
-		const title = $("ann-title")?.value?.trim();
-		const body = $("ann-body")?.value?.trim();
-		const type = $("ann-type")?.value || "info";
-		if (!title || !body) {
-			$("ann-msg").innerHTML =
-				'<div class="alert alert-error">Titre et message requis.</div>';
-			return;
-		}
-		await addDoc(collection(db, "announcements"), {
-			title,
-			body,
-			type,
-			authorId: currentUser.id,
-			authorName: currentUser.name,
-			createdAt: serverTimestamp(),
-		});
-		$("ann-msg").innerHTML =
-			'<div class="alert alert-success">Annonce publi\u00e9e !</div>';
-		if ($("ann-title")) $("ann-title").value = "";
-		if ($("ann-body")) $("ann-body").value = "";
-		setTimeout(() => this.adminTab("announce"), 1500);
-	},
+  async publishAnnouncement() {
+    const title = $('ann-title')?.value?.trim()
+    const body  = $('ann-body')?.value?.trim()
+    const type  = $('ann-type')?.value || 'info'
+    if (!title || !body) {
+      $('ann-msg').innerHTML = '<div class="alert alert-error">Titre et message requis.</div>'
+      return
+    }
+    await addDoc(collection(db, 'announcements'), {
+      title, body, type,
+      authorId: currentUser.id,
+      authorName: currentUser.name,
+      createdAt: serverTimestamp()
+    })
+    $('ann-msg').innerHTML = '<div class="alert alert-success">Annonce publi\u00e9e !</div>'
+    if ($('ann-title')) $('ann-title').value = ''
+    if ($('ann-body'))  $('ann-body').value  = ''
+    setTimeout(() => this.adminTab('announce'), 1500)
+  },
 
-	async deleteAnnouncement(id) {
-		await deleteDoc(doc(db, "announcements", id));
-		this.adminTab("announce");
-	},
+  async deleteAnnouncement(id) {
+    await deleteDoc(doc(db, 'announcements', id))
+    this.adminTab('announce')
+  },
 
-	// Bannissement avec confirmation et raison
-	showBanModal(uid, name, isBanned) {
-		if (isBanned) {
-			// Déjà banni → modal pour débannir
-			this.showModal(`
+  // Bannissement avec confirmation et raison
+  showBanModal(uid, name, isBanned) {
+    if (isBanned) {
+      // Déjà banni → modal pour débannir
+      this.showModal(`
         <div class="modal-title">D\u00e9bannir cet utilisateur</div>
         <div style="display:flex;align-items:center;gap:12px;padding:14px;background:var(--bg3);border-radius:var(--radius-sm);margin-bottom:16px">
           <div style="width:40px;height:40px;border-radius:50%;background:#5dd89e;display:flex;align-items:center;justify-content:center;font-weight:600;color:#fff">${esc(name[0])}</div>
@@ -2836,10 +2461,10 @@ const V = (window.V = {
           <button class="btn-primary" onclick="V.executeBan('${uid}', false, '')">
             D\u00e9bannir l'utilisateur
           </button>
-        </div>`);
-		} else {
-			// Pas banni → modal pour bannir avec raison
-			this.showModal(`
+        </div>`)
+    } else {
+      // Pas banni → modal pour bannir avec raison
+      this.showModal(`
         <div class="modal-title">Bannir cet utilisateur</div>
         <div style="display:flex;align-items:center;gap:12px;padding:14px;background:var(--bg3);border-radius:var(--radius-sm);margin-bottom:16px">
           <div style="width:40px;height:40px;border-radius:50%;background:#7c6af7;display:flex;align-items:center;justify-content:center;font-weight:600;color:#fff">${esc(name[0])}</div>
@@ -2872,215 +2497,151 @@ const V = (window.V = {
             style="background:rgba(242,107,107,0.15);border:1px solid rgba(242,107,107,0.3);color:#f26b6b;padding:10px 18px;border-radius:var(--radius-sm);font-family:var(--font);font-size:14px;font-weight:500;cursor:pointer">
             Confirmer le bannissement
           </button>
-        </div>`);
-		}
-	},
+        </div>`)
+    }
+  },
 
-	async executeBan(uid, ban, reason) {
-		const updates = {
-			banned: ban,
-			banReason: ban ? reason : null,
-			bannedAt: ban ? serverTimestamp() : null,
-			bannedBy: ban ? currentUser.id : null,
-		};
-		await updateDoc(doc(db, "users", uid), updates);
-		this.closeModal();
-		// Notification dans la console admin
-		const msg = ban
-			? `Utilisateur banni (raison: ${reason})`
-			: "Utilisateur d\u00e9banni";
-		console.log(`[AEVOX Admin] ${msg}`);
-		this.go("admin");
-	},
+  async executeBan(uid, ban, reason) {
+    const updates = {
+      banned:    ban,
+      banReason: ban ? reason : null,
+      bannedAt:  ban ? serverTimestamp() : null,
+      bannedBy:  ban ? currentUser.id : null
+    }
+    await updateDoc(doc(db, 'users', uid), updates)
+    // Nettoyer les relations si banni
+    if (ban) await this.cleanupUserRelations(uid)
+    this.closeModal()
+    this.go('admin')
+  },
 
-	// ---- PANNEAU DROIT ----
+  // ---- PANNEAU DROIT ----
 
-	async loadRightPanel() {
-		const trendsEl = $("trends-panel");
-		if (trendsEl)
-			trendsEl.innerHTML =
-				'<div style="color:var(--text3);font-size:13px">Calcul en cours...</div>';
+  async loadRightPanel() {
+    const trendsEl = $('trends-panel')
+    if (trendsEl) trendsEl.innerHTML = '<div style="color:var(--text3);font-size:13px">Calcul en cours...</div>'
 
-		try {
-			// Récupérer les 200 derniers posts publics
-			const snap = await getDocs(
-				query(
-					collection(db, "posts"),
-					orderBy("createdAt", "desc"),
-					limit(200),
-				),
-			);
-			const posts = snap.docs.map((d) => d.data());
+    try {
+      // Récupérer les 200 derniers posts publics
+      const snap  = await getDocs(query(collection(db, 'posts'), orderBy('createdAt', 'desc'), limit(200)))
+      const posts = snap.docs.map(d => d.data())
 
-			// Compter les hashtags
-			const hashtagCount = {};
-			const wordCount = {};
+      // Compter les hashtags
+      const hashtagCount = {}
+      const wordCount    = {}
 
-			posts.forEach((p) => {
-				if (!p.content) return;
-				// Hashtags explicites (#motclé)
-				const tags = p.content.match(/#[\wÀ-ÿ]+/g) || [];
-				tags.forEach((t) => {
-					const tag = t.toLowerCase();
-					hashtagCount[tag] = (hashtagCount[tag] || 0) + 1;
-				});
-				// Mots fréquents (> 4 lettres, pas stopwords)
-				const stopwords = new Set([
-					"dans",
-					"avec",
-					"pour",
-					"mais",
-					"donc",
-					"cette",
-					"aussi",
-					"plus",
-					"très",
-					"bien",
-					"tout",
-					"comme",
-					"quand",
-					"après",
-					"avant",
-					"sous",
-					"sans",
-					"alors",
-					"même",
-					"être",
-					"avoir",
-					"faire",
-					"dire",
-					"aller",
-					"voir",
-					"vouloir",
-					"venir",
-					"pouvoir",
-					"devoir",
-					"prendre",
-					"savoir",
-				]);
-				const words = p.content.toLowerCase().match(/[a-zà-ÿ]{5,}/g) || [];
-				words.forEach((w) => {
-					if (!stopwords.has(w)) wordCount[w] = (wordCount[w] || 0) + 1;
-				});
-			});
+      posts.forEach(p => {
+        if (!p.content) return
+        // Hashtags explicites (#motclé)
+        const tags = p.content.match(/#[\wÀ-ÿ]+/g) || []
+        tags.forEach(t => {
+          const tag = t.toLowerCase()
+          hashtagCount[tag] = (hashtagCount[tag] || 0) + 1
+        })
+        // Mots fréquents (> 4 lettres, pas stopwords)
+        const stopwords = new Set(['dans','avec','pour','mais','donc','cette','aussi','plus','très','bien','tout','comme','quand','après','avant','sous','sans','alors','même','être','avoir','faire','dire','aller','voir','vouloir','venir','pouvoir','devoir','prendre','savoir'])
+        const words = p.content.toLowerCase().match(/[a-zà-ÿ]{5,}/g) || []
+        words.forEach(w => {
+          if (!stopwords.has(w)) wordCount[w] = (wordCount[w] || 0) + 1
+        })
+      })
 
-			// Trier hashtags par fréquence
-			const sortedTags = Object.entries(hashtagCount)
-				.sort((a, b) => b[1] - a[1])
-				.slice(0, 8);
+      // Trier hashtags par fréquence
+      const sortedTags = Object.entries(hashtagCount)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 8)
 
-			// Trier mots par fréquence (fallback si peu de hashtags)
-			const sortedWords = Object.entries(wordCount)
-				.sort((a, b) => b[1] - a[1])
-				.slice(0, 8);
+      // Trier mots par fréquence (fallback si peu de hashtags)
+      const sortedWords = Object.entries(wordCount)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 8)
 
-			// Construire la liste finale (hashtags en priorité, mots en complément)
-			const trendItems = [];
+      // Construire la liste finale (hashtags en priorité, mots en complément)
+      const trendItems = []
 
-			sortedTags.forEach(([tag, count]) => {
-				trendItems.push({ tag, count, type: "hashtag" });
-			});
+      sortedTags.forEach(([tag, count]) => {
+        trendItems.push({ tag, count, type: 'hashtag' })
+      })
 
-			// Compléter avec des mots populaires si moins de 5 hashtags
-			if (trendItems.length < 5) {
-				sortedWords.slice(0, 5 - trendItems.length).forEach(([word, count]) => {
-					if (!trendItems.find((t) => t.tag === "#" + word)) {
-						trendItems.push({ tag: word, count, type: "mot" });
-					}
-				});
-			}
+      // Compléter avec des mots populaires si moins de 5 hashtags
+      if (trendItems.length < 5) {
+        sortedWords.slice(0, 5 - trendItems.length).forEach(([word, count]) => {
+          if (!trendItems.find(t => t.tag === '#' + word)) {
+            trendItems.push({ tag: word, count, type: 'mot' })
+          }
+        })
+      }
 
-			if (trendsEl) {
-				if (!trendItems.length) {
-					trendsEl.innerHTML = `
+      if (trendsEl) {
+        if (!trendItems.length) {
+          trendsEl.innerHTML = `
             <div style="font-size:13px;color:var(--text3);padding:8px 0">
               Aucune tendance pour l'instant.<br>
               Publiez des posts avec des <span style="color:var(--accent2)">#hashtags</span> !
-            </div>`;
-				} else {
-					trendsEl.innerHTML = trendItems
-						.slice(0, 6)
-						.map(
-							(t, i) => `
+            </div>`
+        } else {
+          trendsEl.innerHTML = trendItems.slice(0, 6).map((t, i) => `
             <div class="trend-item" onclick="V.go('search');setTimeout(()=>{const si=$('search-input');if(si){si.value='${esc(t.tag)}';V.doSearch('${esc(t.tag)}');V.setSearchTab('posts')}},100)">
-              <div class="trend-category">${t.type === "hashtag" ? "Hashtag tendance" : "Mot populaire"} · #${i + 1}</div>
-              <div class="trend-tag">${t.type === "hashtag" ? esc(t.tag) : "#" + esc(t.tag)}</div>
-              <div class="trend-count">${t.count} publication${t.count > 1 ? "s" : ""}</div>
-            </div>`,
-						)
-						.join("");
-				}
-			}
-		} catch (e) {
-			if (trendsEl)
-				trendsEl.innerHTML =
-					'<div style="font-size:13px;color:var(--text3)">Impossible de charger les tendances.</div>';
-		}
+              <div class="trend-category">${t.type === 'hashtag' ? 'Hashtag tendance' : 'Mot populaire'} · #${i + 1}</div>
+              <div class="trend-tag">${t.type === 'hashtag' ? esc(t.tag) : '#' + esc(t.tag)}</div>
+              <div class="trend-count">${t.count} publication${t.count > 1 ? 's' : ''}</div>
+            </div>`).join('')
+        }
+      }
+    } catch (e) {
+      if (trendsEl) trendsEl.innerHTML = '<div style="font-size:13px;color:var(--text3)">Impossible de charger les tendances.</div>'
+    }
 
-		// Annonces actives
-		try {
-			const annSnap = await getDocs(
-				query(
-					collection(db, "announcements"),
-					orderBy("createdAt", "desc"),
-					limit(3),
-				),
-			);
-			const anns = annSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-			const annEl = $("announcements-panel");
-			if (annEl && anns.length) {
-				const colors = {
-					info: "#4a9eff",
-					success: "#5dd89e",
-					warn: "#f5a623",
-					danger: "#f26b6b",
-				};
-				const icons = { info: "ℹ️", success: "✅", warn: "⚠️", danger: "🚫" };
-				annEl.innerHTML = anns
-					.map((a) => {
-						const c = colors[a.type] || "#4a9eff";
-						return `
+    // Annonces actives
+    try {
+      const annSnap = await getDocs(query(collection(db, 'announcements'), orderBy('createdAt', 'desc'), limit(3)))
+      const anns    = annSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+      const annEl   = $('announcements-panel')
+      if (annEl && anns.length) {
+        const colors = { info: '#4a9eff', success: '#5dd89e', warn: '#f5a623', danger: '#f26b6b' }
+        const icons  = { info: 'ℹ️', success: '✅', warn: '⚠️', danger: '🚫' }
+        annEl.innerHTML = anns.map(a => {
+          const c = colors[a.type] || '#4a9eff'
+          return `
             <div style="background:${c}11;border:1px solid ${c}33;border-radius:var(--radius-sm);padding:12px;margin-bottom:8px">
-              <div style="font-weight:600;font-size:13px;color:${c}">${icons[a.type] || ""} ${esc(a.title)}</div>
+              <div style="font-weight:600;font-size:13px;color:${c}">${icons[a.type] || ''} ${esc(a.title)}</div>
               <div style="font-size:12px;color:var(--text2);margin-top:4px;line-height:1.4">${esc(a.body)}</div>
               <div style="font-size:11px;color:var(--text3);margin-top:6px">${timeAgo(a.createdAt)}</div>
-            </div>`;
-					})
-					.join("");
-				// Afficher la section si elle a du contenu
-				const annSection = $("announcements-section");
-				if (annSection) annSection.style.display = "block";
-			}
-		} catch {}
+            </div>`
+        }).join('')
+        // Afficher la section si elle a du contenu
+        const annSection = $('announcements-section')
+        if (annSection) annSection.style.display = 'block'
+      }
+    } catch {}
 
-		// Suggestions — supprimées pour respecter la confidentialité des utilisateurs
-		const suggsEl = $("suggestions-panel");
-		if (suggsEl)
-			suggsEl.innerHTML =
-				'<p style="font-size:13px;color:var(--text3)">Recherchez un utilisateur par son pseudo exact dans l\'onglet Recherche.</p>';
-	},
+    // Suggestions — supprimées pour respecter la confidentialité des utilisateurs
+    const suggsEl = $('suggestions-panel')
+    if (suggsEl) suggsEl.innerHTML = '<p style="font-size:13px;color:var(--text3)">Recherchez un utilisateur par son pseudo exact dans l\'onglet Recherche.</p>'
+  },
 
-	// ---- MODAL ----
+  // ---- MODAL ----
 
-	showModal(html) {
-		$("modal-content").innerHTML = html;
-		$("modal-overlay").style.display = "flex";
-	},
+  showModal(html) {
+    $('modal-content').innerHTML = html
+    $('modal-overlay').style.display = 'flex'
+  },
 
-	closeModal(e) {
-		if (!e || e.target === $("modal-overlay")) {
-			$("modal-overlay").style.display = "none";
-		}
-	},
-});
+  closeModal(e) {
+    if (!e || e.target === $('modal-overlay')) {
+      $('modal-overlay').style.display = 'none'
+    }
+  }
+
+}
 
 // ================================================
 //  INITIALISATION
 // ================================================
 
 // Appliquer le thème sauvegardé
-const savedTheme = localStorage.getItem("aevox_theme");
-if (savedTheme) document.documentElement.setAttribute("data-theme", savedTheme);
+const savedTheme = localStorage.getItem('aevox_theme')
+if (savedTheme) document.documentElement.setAttribute('data-theme', savedTheme)
 
 // Démarrer Google Sign-In
-initGoogleSignIn();
+initGoogleSignIn()
